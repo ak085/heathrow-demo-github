@@ -1,28 +1,24 @@
-import { createContext, useContext } from "react";
-import { makeAutoObservable } from "mobx";
-import { VRVStore } from "./VRVStore";
-import { LightingStore } from "./LightingStore";
-import { BTUStore } from "./BTUStore";
+import { createContext, useContext } from 'react'
+import { makeAutoObservable } from 'mobx'
+import { ChillerStore } from './ChillerStore'
+import { AHUStore } from './AHUStore'
+import { PowerGridStore } from './PowerGridStore'
+import { SolarStore } from './SolarStore'
+import { SavingsStore } from './SavingsStore'
 
 export class RootStore {
-  vrv      = new VRVStore();
-  lighting = new LightingStore();
-  btu      = new BTUStore();
-  darkMode  = false;
-  tariffSgd = 0.25;   // SGD / kWh — adjustable globally
+  chiller  = new ChillerStore()
+  ahu      = new AHUStore()
+  power    = new PowerGridStore()
+  solar    = new SolarStore()
+  savings  = new SavingsStore()
+  darkMode = false
 
-  constructor() {
-    makeAutoObservable(this);
-  }
-
-  toggleDark() { this.darkMode = !this.darkMode; }
-  setTariff(v: number) { this.tariffSgd = Math.max(0.01, Math.min(2, +v.toFixed(3))); }
+  constructor() { makeAutoObservable(this) }
+  toggleDark() { this.darkMode = !this.darkMode }
 }
 
-export const rootStore = new RootStore();
-
-const StoreContext = createContext(rootStore);
-
-export const useStore = () => useContext(StoreContext);
-
-export { VRVStore, LightingStore, BTUStore };
+export const rootStore = new RootStore()
+const StoreContext = createContext(rootStore)
+export const useStore = () => useContext(StoreContext)
+export { ChillerStore, AHUStore, PowerGridStore, SolarStore, SavingsStore }

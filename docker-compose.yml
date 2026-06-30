@@ -1,31 +1,14 @@
 services:
-  dbs-demo:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: dbs-demo
-    restart: unless-stopped
+  heathrow-demo:
+    build: ./frontend
+    container_name: heathrow-demo
     ports:
-      - "8029:80"      # All interfaces — Tailscale (100.125.242.78) + LAN (10.230.93.50)
+      - "8030:80"
     depends_on:
-      - dbs-demo-backend
-    networks:
-      - aihvac-net
-      - dbs-internal
-
-  dbs-demo-backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: dbs-demo-backend
+      - heathrow-demo-backend
     restart: unless-stopped
-    volumes:
-      - ./data:/data
-    networks:
-      - dbs-internal
 
-networks:
-  aihvac-net:
-    external: true
-  dbs-internal:
-    driver: bridge
+  heathrow-demo-backend:
+    build: ./backend
+    container_name: heathrow-demo-backend
+    restart: unless-stopped
