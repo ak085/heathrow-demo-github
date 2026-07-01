@@ -43,22 +43,22 @@ const LoginPage: React.FC<Props> = ({ onLogin }) => {
             display:      'inline-flex',
             alignItems:   'center',
             gap:          10,
-            background:   '#a80000',
+            background:   '#5a0057',
             borderRadius: 8,
             padding:      '10px 22px',
             marginBottom: 18,
           }}>
             <span style={{ color: '#fff', fontWeight: 900, fontSize: 22, letterSpacing: 1 }}>
-              DBS
+              Heathrow
             </span>
             <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12, lineHeight: 1.35 }}>
-              Building<br />Intelligence
+              Energy<br />Intelligence
             </span>
           </div>
           <div>
             <Title level={4} style={{ margin: 0, color: '#262626' }}>Sign in</Title>
             <Text type="secondary" style={{ fontSize: 13 }}>
-              Building Management Dashboard
+              Terminal Energy Management Platform
             </Text>
           </div>
         </div>
@@ -96,7 +96,7 @@ const LoginPage: React.FC<Props> = ({ onLogin }) => {
               htmlType="submit"
               block
               loading={loading}
-              style={{ background: '#a80000', borderColor: '#a80000', height: 40 }}
+              style={{ background: '#5a0057', borderColor: '#5a0057', height: 40 }}
             >
               Sign In
             </Button>
