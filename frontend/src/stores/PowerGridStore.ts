@@ -3,6 +3,7 @@ import type { Finding } from '../types/fdd'
 import { gaussian, airportLoad, genHistory, MAX_HISTORY_DAYS } from '../utils/history'
 import type { ChillerStore } from './ChillerStore'
 import type { AHUStore } from './AHUStore'
+import type { LightingStore } from './LightingStore'
 
 function clamp(min: number, max: number, v: number) { return Math.max(min, Math.min(max, v)) }
 
@@ -108,6 +109,7 @@ export class PowerGridStore {
   mechFanKw = gaussian(65, 8)
   private chiller: ChillerStore
   private ahu: AHUStore
+  private lighting: LightingStore
 
   // Total-building demand: 7 days × 24 hours, weekday/weekend variation — derived from the same
   // substation base/noise figures as the live demand, so this tab's numbers match the others.
@@ -123,9 +125,10 @@ export class PowerGridStore {
     })
   })()
 
-  constructor(chiller: ChillerStore, ahu: AHUStore) {
+  constructor(chiller: ChillerStore, ahu: AHUStore, lighting: LightingStore) {
     this.chiller = chiller
     this.ahu = ahu
+    this.lighting = lighting
     makeAutoObservable(this)
     setInterval(() => this.tick(), 5000)
   }
@@ -133,22 +136,30 @@ export class PowerGridStore {
   get totalBuildingKw() { return this.substations.reduce((s, sub) => s + sub.kw, 0) }
   get todayTotalKwh()   { return this.substations.reduce((s, sub) => s + sub.todayKwh, 0) }
 
-  /** Real chiller-plant and AHU fan power — the exact same numbers shown on the Chiller Plant
-   *  and AHUs pages, not an independent duplicate. Substation capacities above are sized so the
-   *  chiller plant (up to ~7.5 MW across 5 units) is always a believable minority share of total
-   *  building demand, so no capping is needed for these to reconcile with the sub-meter totals. */
+  /** Real chiller-plant, AHU fan and lighting power — the exact same numbers shown on the
+   *  Chiller Plant, AHUs and Lighting pages, not an independent duplicate. Substation capacities
+   *  above are sized so the chiller plant (up to ~7.5 MW across 5 units) is always a believable
+   *  minority share of total building demand, so no capping is needed for these to reconcile
+   *  with the sub-meter totals. */
   get chillerPlantKw() { return this.chiller.chillerPlantKw }
   get airsideKw()      { return this.ahu.totalFanKw }
+  get lightingKw()     { return this.lighting.totalPowerKw }
+  /** Live instantaneous remainder — lighting, retail, IT, baggage systems etc. not separately
+   *  sub-metered in this demo. */
+  get otherKw() {
+    return Math.max(0, this.totalBuildingKw - this.chillerPlantKw - this.airsideKw - this.mechFanKw - this.lightingKw)
+  }
 
   /** Today's category kWh as a live proportion of the real metered total — guarantees
-   *  Chiller + Airside + Mech Fans + Other always reconciles exactly to todayTotalKwh,
+   *  Chiller + Airside + Lighting + Mech Fans + Other always reconciles exactly to todayTotalKwh,
    *  instead of being computed on a disconnected accounting basis (the old `kw × 14h`
    *  approximation, which routinely made "Other" balloon or vanish). */
-  get todayChillerKwh() { return this.totalBuildingKw > 0 ? this.todayTotalKwh * (this.chillerPlantKw / this.totalBuildingKw) : 0 }
-  get todayAirsideKwh() { return this.totalBuildingKw > 0 ? this.todayTotalKwh * (this.airsideKw / this.totalBuildingKw) : 0 }
-  get todayMechFanKwh() { return this.totalBuildingKw > 0 ? this.todayTotalKwh * (this.mechFanKw / this.totalBuildingKw) : 0 }
-  get todayOtherKwh()   {
-    return Math.max(0, this.todayTotalKwh - this.todayChillerKwh - this.todayAirsideKwh - this.todayMechFanKwh)
+  get todayChillerKwh()  { return this.totalBuildingKw > 0 ? this.todayTotalKwh * (this.chillerPlantKw / this.totalBuildingKw) : 0 }
+  get todayAirsideKwh()  { return this.totalBuildingKw > 0 ? this.todayTotalKwh * (this.airsideKw / this.totalBuildingKw) : 0 }
+  get todayLightingKwh() { return this.totalBuildingKw > 0 ? this.todayTotalKwh * (this.lightingKw / this.totalBuildingKw) : 0 }
+  get todayMechFanKwh()  { return this.totalBuildingKw > 0 ? this.todayTotalKwh * (this.mechFanKw / this.totalBuildingKw) : 0 }
+  get todayOtherKwh()    {
+    return Math.max(0, this.todayTotalKwh - this.todayChillerKwh - this.todayAirsideKwh - this.todayLightingKwh - this.todayMechFanKwh)
   }
   get avgPF() { return this.substations.reduce((s, sub) => s + sub.pf, 0) / this.substations.length }
 

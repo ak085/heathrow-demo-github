@@ -9,7 +9,7 @@ import { SEVERITY_ORDER, SEVERITY_STYLE, type Finding, type Severity } from '../
 const { Title, Paragraph, Text } = Typography
 const PURPLE = '#5a0057'
 
-type Group = 'Chiller Plant' | 'AHUs' | 'Power & Grid' | 'Solar & Export'
+type Group = 'Chiller Plant' | 'AHUs' | 'Power & Grid' | 'Solar & Export' | 'Tenant Billing' | 'Lighting'
 type NotifyChannel = 'Email + SMS' | 'Email' | 'None'
 
 interface TaggedFinding extends Finding {
@@ -20,6 +20,8 @@ function groupFor(ruleId: string): Group {
   if (ruleId.startsWith('CHI') || ruleId.startsWith('PLANT')) return 'Chiller Plant'
   if (ruleId.startsWith('AHU')) return 'AHUs'
   if (ruleId.startsWith('PWR')) return 'Power & Grid'
+  if (ruleId.startsWith('TEN')) return 'Tenant Billing'
+  if (ruleId.startsWith('DALI')) return 'Lighting'
   return 'Solar & Export'
 }
 
@@ -36,6 +38,8 @@ const GROUP_COLOR: Record<Group, string> = {
   'AHUs': 'blue',
   'Power & Grid': 'volcano',
   'Solar & Export': 'gold',
+  'Tenant Billing': 'cyan',
+  'Lighting': 'lime',
 }
 
 const CHANNEL_COLOR: Record<NotifyChannel, string> = {
@@ -45,7 +49,7 @@ const CHANNEL_COLOR: Record<NotifyChannel, string> = {
 }
 
 const AlarmsPage: React.FC = observer(() => {
-  const { chiller, ahu, power, solar } = useStore()
+  const { chiller, ahu, power, solar, tenant, lighting } = useStore()
   const chartTheme = useEchartsTheme()
   const [groupFilter, setGroupFilter] = useState<Group | 'All'>('All')
   const [severityFilter, setSeverityFilter] = useState<Severity | 'All'>('All')
@@ -55,14 +59,16 @@ const AlarmsPage: React.FC = observer(() => {
     ...ahu.allFindings.map(f => ({ ...f, group: groupFor(f.ruleId) })),
     ...power.allFindings.map(f => ({ ...f, group: groupFor(f.ruleId) })),
     ...solar.allFindings.map(f => ({ ...f, group: groupFor(f.ruleId) })),
+    ...tenant.allFindings.map(f => ({ ...f, group: groupFor(f.ruleId) })),
+    ...lighting.allFindings.map(f => ({ ...f, group: groupFor(f.ruleId) })),
   ].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]),
-  [chiller.allFindings, ahu.allFindings, power.allFindings, solar.allFindings])
+  [chiller.allFindings, ahu.allFindings, power.allFindings, solar.allFindings, tenant.allFindings, lighting.allFindings])
 
   const critCount = allFindings.filter(f => f.severity === 'critical').length
   const warnCount = allFindings.filter(f => f.severity === 'warning').length
   const mostSevere = allFindings[0]
 
-  const byGroup: Group[] = ['Chiller Plant', 'AHUs', 'Power & Grid', 'Solar & Export']
+  const byGroup: Group[] = ['Chiller Plant', 'AHUs', 'Power & Grid', 'Solar & Export', 'Tenant Billing', 'Lighting']
   const groupCounts = byGroup.map(g => ({
     group: g,
     crit: allFindings.filter(f => f.group === g && f.severity === 'critical').length,
@@ -90,7 +96,7 @@ const AlarmsPage: React.FC = observer(() => {
     <div style={{ padding: '24px 28px' }}>
       <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Alarms</Title>
       <Paragraph type="secondary" style={{ marginBottom: 20 }}>
-        Every active finding across Chiller Plant, AHUs, Power &amp; Grid and Solar &amp; Export in one place.
+        Every active finding across Chiller Plant, AHUs, Power &amp; Grid, Solar &amp; Export, Tenant Billing and Lighting in one place.
       </Paragraph>
 
       {/* Alert ticker — single most severe active alarm */}

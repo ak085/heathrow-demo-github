@@ -4,7 +4,7 @@ import { Card, Row, Col, Typography, Tag } from 'antd'
 import { observer } from 'mobx-react-lite'
 import {
   ThunderboltOutlined, CloudOutlined, BankOutlined,
-  SunOutlined, RiseOutlined,
+  SunOutlined, RiseOutlined, ShopOutlined, BulbOutlined,
   CheckCircleOutlined, ExclamationCircleOutlined, CloseCircleOutlined,
 } from '@ant-design/icons'
 import { useStore } from '../stores'
@@ -23,13 +23,15 @@ function HealthPill({ health }: { health: 'ok' | 'warning' | 'critical' }) {
 
 const LandingPage: React.FC = observer(() => {
   const navigate = useNavigate()
-  const { chiller, ahu, power, solar, savings } = useStore()
+  const { chiller, ahu, power, solar, savings, tenant, lighting } = useStore()
 
-  const hChiller = overallHealth(chiller.allFindings)
-  const hAHU     = overallHealth(ahu.allFindings)
-  const hPower   = overallHealth(power.allFindings)
-  const hSolar   = overallHealth(solar.allFindings)
-  const hSavings = overallHealth(savings.allFindings)
+  const hChiller  = overallHealth(chiller.allFindings)
+  const hAHU      = overallHealth(ahu.allFindings)
+  const hPower    = overallHealth(power.allFindings)
+  const hSolar    = overallHealth(solar.allFindings)
+  const hSavings  = overallHealth(savings.allFindings)
+  const hTenant   = overallHealth(tenant.allFindings)
+  const hLighting = overallHealth(lighting.allFindings)
 
   const TILES = [
     {
@@ -38,8 +40,8 @@ const LandingPage: React.FC = observer(() => {
       iconBg: 'rgba(90,0,87,0.12)', cardBg: 'rgba(90,0,87,0.04)',
       border: PURPLE,
       title: 'Chiller Plant',
-      subtitle: '3 Water-Cooled Chillers — T2 & T3 Plant Rooms',
-      tag: '3 Chillers',
+      subtitle: '5 Water-Cooled Chillers — T2, T3 & T5 Plant Rooms',
+      tag: '5 Chillers',
       stat: `${chiller.chillerPlantKw.toFixed(0)} kW`,
       statLabel: 'Plant Load',
       findings: chiller.allFindings,
@@ -51,8 +53,8 @@ const LandingPage: React.FC = observer(() => {
       iconBg: '#e6f4ff', cardBg: '#f0f8ff',
       border: '#1677ff',
       title: 'AHUs',
-      subtitle: '6 Air Handling Units — T1 / T2 / T3 / T5',
-      tag: '6 AHUs',
+      subtitle: '10 Air Handling Units — T1 / T2 / T3 / T5',
+      tag: '10 AHUs',
       stat: `${ahu.avgSAT.toFixed(1)}°C`,
       statLabel: 'Avg Supply Air Temp',
       findings: ahu.allFindings,
@@ -95,6 +97,32 @@ const LandingPage: React.FC = observer(() => {
       stat: `£${savings.savingsGbpToday.toFixed(0)}`,
       statLabel: 'Saved Today',
       findings: savings.allFindings,
+      prominent: false,
+    },
+    {
+      key: 'tenant', path: '/tenant', health: hTenant,
+      icon: <ShopOutlined style={{ fontSize: 36, color: '#0891b2' }} />,
+      iconBg: '#cffafe', cardBg: '#ecfeff',
+      border: '#0891b2',
+      title: 'Tenant Billing',
+      subtitle: 'Commercial Loss — Meter Anomaly Detection',
+      tag: '20-Meter Sample',
+      stat: `£${(tenant.extrapolatedAnnualLossGbp / 1000).toFixed(0)}k`,
+      statLabel: 'Est. Annual Loss',
+      findings: tenant.allFindings,
+      prominent: false,
+    },
+    {
+      key: 'lighting', path: '/lighting', health: hLighting,
+      icon: <BulbOutlined style={{ fontSize: 36, color: '#65a30d' }} />,
+      iconBg: '#ecfccb', cardBg: '#f7fee7',
+      border: '#65a30d',
+      title: 'Lighting Monitoring',
+      subtitle: 'DALI Dimming — 10 Zones, T1/T2/T3/T5 & Landside',
+      tag: `${lighting.zones.length} Zones`,
+      stat: `${lighting.totalPowerKw.toFixed(0)} kW`,
+      statLabel: 'Power Now',
+      findings: lighting.allFindings,
       prominent: false,
     },
   ]

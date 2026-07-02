@@ -5,13 +5,17 @@ import { AHUStore } from './AHUStore'
 import { PowerGridStore } from './PowerGridStore'
 import { SolarStore } from './SolarStore'
 import { SavingsStore } from './SavingsStore'
+import { TenantStore } from './TenantStore'
+import { LightingStore } from './LightingStore'
 
 export class RootStore {
   ahu      = new AHUStore()
   chiller  = new ChillerStore(this.ahu)
-  power    = new PowerGridStore(this.chiller, this.ahu)
+  lighting = new LightingStore()
+  power    = new PowerGridStore(this.chiller, this.ahu, this.lighting)
   solar    = new SolarStore(this.power)
   savings  = new SavingsStore(this.chiller)
+  tenant   = new TenantStore()
   darkMode = false
 
   constructor() { makeAutoObservable(this) }
@@ -21,4 +25,4 @@ export class RootStore {
 export const rootStore = new RootStore()
 const StoreContext = createContext(rootStore)
 export const useStore = () => useContext(StoreContext)
-export { ChillerStore, AHUStore, PowerGridStore, SolarStore, SavingsStore }
+export { ChillerStore, AHUStore, PowerGridStore, SolarStore, SavingsStore, TenantStore, LightingStore }

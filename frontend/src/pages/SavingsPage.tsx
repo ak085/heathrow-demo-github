@@ -17,7 +17,7 @@ const COP_ZONES = buildZones({ min: 3, max: 6.2, critLow: 3.5, warnLow: 4.0 })
 const SAVINGS_PCT_ZONES = buildZones({ min: 0, max: 30, warnLow: 8, critLow: 3 })
 
 const SavingsPage: React.FC = observer(() => {
-  const { savings, chiller, ahu, power, solar } = useStore()
+  const { savings, chiller, ahu, power, solar, tenant, lighting } = useStore()
   const navigate = useNavigate()
   const chartTheme = useEchartsTheme()
 
@@ -27,6 +27,8 @@ const SavingsPage: React.FC = observer(() => {
     ...ahu.allFindings,
     ...power.allFindings,
     ...solar.allFindings,
+    ...tenant.allFindings,
+    ...lighting.allFindings,
   ]
   const openCount    = allFindings.length
   const critCount    = allFindings.filter(f => f.severity === 'critical').length

@@ -35,8 +35,8 @@ function coloredText(value: number, zones: ReturnType<typeof buildZones>, text: 
 const PowerGridPage: React.FC = observer(() => {
   const store = useStore()
   const { power } = store
-  const { substations, totalBuildingKw, chillerPlantKw, airsideKw, mechFanKw,
-          todayTotalKwh, todayChillerKwh, todayAirsideKwh, todayMechFanKwh, todayOtherKwh,
+  const { substations, totalBuildingKw, chillerPlantKw, airsideKw, mechFanKw, lightingKw, otherKw,
+          todayTotalKwh, todayChillerKwh, todayAirsideKwh, todayLightingKwh, todayMechFanKwh, todayOtherKwh,
           heatmapData, allFindings, avgPF } = power
   const chartTheme = useEchartsTheme()
   const [days, setDays] = useState<TimelineDays>(1)
@@ -287,6 +287,7 @@ const PowerGridPage: React.FC = observer(() => {
       data: [
         { name: 'Chiller Plant', value: Math.round(todayChillerKwh), itemStyle: { color: PURPLE } },
         { name: 'Airside (AHU)', value: Math.round(todayAirsideKwh), itemStyle: { color: '#9b59b6' } },
+        { name: 'Lighting', value: Math.round(todayLightingKwh), itemStyle: { color: '#65a30d' } },
         { name: 'Mech Fans', value: Math.round(todayMechFanKwh), itemStyle: { color: '#3498db' } },
         { name: 'Other', value: Math.round(todayOtherKwh), itemStyle: { color: '#bbb' } },
       ],
@@ -296,7 +297,7 @@ const PowerGridPage: React.FC = observer(() => {
   const subMetersTab = (
     <div>
       <Row gutter={[16, 16]}>
-        <Col xs={24} md={9}>
+        <Col xs={24} md={8}>
           <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <ReactECharts option={subMeterDonutOpt} theme={chartTheme} style={{ width: 130, height: 130, flexShrink: 0 }} />
@@ -305,26 +306,37 @@ const PowerGridPage: React.FC = observer(() => {
                 <div style={{ fontSize: 24, fontWeight: 700, color: PURPLE, marginBottom: 6 }}>{Math.round(todayTotalKwh).toLocaleString()} kWh</div>
                 <div style={{ fontSize: 11 }}><span style={{ color: PURPLE }}>■</span> Chiller Plant {Math.round(todayChillerKwh).toLocaleString()}</div>
                 <div style={{ fontSize: 11 }}><span style={{ color: '#9b59b6' }}>■</span> Airside {Math.round(todayAirsideKwh).toLocaleString()}</div>
+                <div style={{ fontSize: 11 }}><span style={{ color: '#65a30d' }}>■</span> Lighting {Math.round(todayLightingKwh).toLocaleString()}</div>
                 <div style={{ fontSize: 11 }}><span style={{ color: '#3498db' }}>■</span> Mech Fans {Math.round(todayMechFanKwh).toLocaleString()}</div>
                 <div style={{ fontSize: 11 }}><span style={{ color: '#bbb' }}>■</span> Other {Math.round(todayOtherKwh).toLocaleString()}</div>
               </div>
             </div>
           </Card>
         </Col>
-        <Col xs={12} md={5}>
+        <Col xs={12} md={4}>
           <Card style={{ textAlign: 'center', height: '100%' }}>
-            <Statistic title="Chiller Plant Now" value={chillerPlantKw.toFixed(0)} suffix="kW" valueStyle={{ color: PURPLE }} />
+            <Statistic title="Chiller Plant Now" value={chillerPlantKw.toFixed(0)} suffix="kW" valueStyle={{ color: PURPLE, fontSize: 20 }} />
           </Card>
         </Col>
-        <Col xs={12} md={5}>
+        <Col xs={12} md={4}>
           <Card style={{ textAlign: 'center', height: '100%' }}>
-            <Statistic title="Airside Now" value={airsideKw.toFixed(0)} suffix="kW" valueStyle={{ color: '#9b59b6' }} />
+            <Statistic title="Airside Now" value={airsideKw.toFixed(0)} suffix="kW" valueStyle={{ color: '#9b59b6', fontSize: 20 }} />
           </Card>
         </Col>
-        <Col xs={12} md={5}>
+        <Col xs={12} md={4}>
           <Card style={{ textAlign: 'center', height: '100%' }}>
-            <Statistic title="Mech Fans Now" value={mechFanKw.toFixed(0)} suffix="kW" valueStyle={{ color: '#3498db' }} />
+            <Statistic title="Lighting Now" value={lightingKw.toFixed(0)} suffix="kW" valueStyle={{ color: '#65a30d', fontSize: 20 }} />
           </Card>
+        </Col>
+        <Col xs={12} md={4}>
+          <Card style={{ textAlign: 'center', height: '100%' }}>
+            <Statistic title="Mech Fans Now" value={mechFanKw.toFixed(0)} suffix="kW" valueStyle={{ color: '#3498db', fontSize: 20 }} />
+          </Card>
+        </Col>
+      </Row>
+      <Row style={{ marginTop: 8 }}>
+        <Col span={24}>
+          <Text type="secondary" style={{ fontSize: 11 }}>Other (unmetered here — retail, IT, baggage systems etc.): {otherKw.toFixed(0)} kW now</Text>
         </Col>
       </Row>
     </div>
@@ -362,6 +374,62 @@ const PowerGridPage: React.FC = observer(() => {
     </Card>
   )
 
+  // ── Power Flow Tab — 3-tier single-line diagram ───────────────────────────
+  const flowCategories = [
+    { name: 'Chiller Plant', kw: chillerPlantKw, color: PURPLE },
+    { name: 'Airside', kw: airsideKw, color: '#9b59b6' },
+    { name: 'Lighting', kw: lightingKw, color: '#65a30d' },
+    { name: 'Mech Fans', kw: mechFanKw, color: '#3498db' },
+    { name: 'Other', kw: otherKw, color: '#bbb' },
+  ]
+
+  const sankeyNodes = [
+    { name: 'Grid Incoming', itemStyle: { color: '#262626' } },
+    ...substations.map(s => ({ name: s.name, itemStyle: { color: s.color } })),
+    ...flowCategories.map(c => ({ name: c.name, itemStyle: { color: c.color } })),
+  ]
+  const sankeyLinks = [
+    ...substations.map(s => ({ source: 'Grid Incoming', target: s.name, value: Math.max(0.01, s.kw) })),
+    ...substations.flatMap(s => flowCategories.map(c => ({
+      source: s.name, target: c.name,
+      value: Math.max(0.01, (c.kw / totalBuildingKw) * s.kw),
+    }))),
+  ]
+  const sankeyOpt = {
+    tooltip: {
+      trigger: 'item' as const,
+      formatter: (p: any) => p.dataType === 'edge'
+        ? `${p.data.source} → ${p.data.target}: ${p.data.value.toFixed(0)} kW`
+        : `${p.name}: ${p.value?.toFixed?.(0) ?? ''} kW`,
+    },
+    series: [{
+      type: 'sankey' as const,
+      data: sankeyNodes,
+      links: sankeyLinks,
+      emphasis: { focus: 'adjacency' as const },
+      lineStyle: { color: 'gradient' as const, curveness: 0.5 },
+      label: { fontSize: 11 },
+      nodeWidth: 18,
+      nodeGap: 12,
+    }],
+  }
+
+  const powerFlowTab = (
+    <div>
+      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Three tiers: grid incoming → HV substation distribution → end-use category. Tier 2→3 flows are each
+          category's plant-wide share applied proportionally to every substation — we don't independently meter
+          which substation feeds which category, so read these as a proportional estimate, not per-substation
+          sub-metering. Tiers 1 and 2 (incoming and substation demand) are directly metered.
+        </Text>
+      </Card>
+      <Card title="Power Flow — Incoming to End Use">
+        <ReactECharts option={sankeyOpt} theme={chartTheme} style={{ height: 480 }} />
+      </Card>
+    </div>
+  )
+
   return (
     <div style={{ padding: '24px 28px' }}>
       <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Power &amp; Grid</Title>
@@ -372,6 +440,7 @@ const PowerGridPage: React.FC = observer(() => {
         defaultActiveKey="demand"
         items={[
           { key: 'demand',    label: 'Demand Profiles',        children: demandTab },
+          { key: 'flow',      label: 'Power Flow',             children: powerFlowTab },
           { key: 'pf',        label: 'Power Factor',           children: pfTab },
           { key: 'pq',        label: 'Power Quality',          children: pqTab },
           { key: 'submeters', label: 'Sub-Meters',             children: subMetersTab },

@@ -14,6 +14,9 @@ import {
   TeamOutlined,
   LogoutOutlined,
   AlertOutlined,
+  ShopOutlined,
+  BulbOutlined,
+  ControlOutlined,
 } from '@ant-design/icons'
 import { useStore } from './stores'
 import { overallHealth } from './types/fdd'
@@ -25,6 +28,9 @@ import AHUPage       from './pages/AHUPage'
 import PowerGridPage from './pages/PowerGridPage'
 import SolarPage     from './pages/SolarPage'
 import SavingsPage   from './pages/SavingsPage'
+import TenantPage    from './pages/TenantPage'
+import LightingPage  from './pages/LightingPage'
+import LightingControlPage from './pages/LightingControlPage'
 import AlarmsPage    from './pages/AlarmsPage'
 import LoginPage     from './pages/LoginPage'
 import UsersPage     from './pages/UsersPage'
@@ -62,18 +68,21 @@ const AppShell = observer(() => {
   const location  = useLocation()
   const store     = useStore()
   const { user, onLogout } = useAuth()
-  const { chiller, ahu, power, solar, savings } = store
+  const { chiller, ahu, power, solar, savings, tenant, lighting } = store
   const [collapsed, setCollapsed] = useState(false)
 
-  const hChiller = overallHealth(chiller.allFindings)
-  const hAHU     = overallHealth(ahu.allFindings)
-  const hPower   = overallHealth(power.allFindings)
-  const hSolar   = overallHealth(solar.allFindings)
-  const hSavings = overallHealth(savings.allFindings)
+  const hChiller  = overallHealth(chiller.allFindings)
+  const hAHU      = overallHealth(ahu.allFindings)
+  const hPower    = overallHealth(power.allFindings)
+  const hSolar    = overallHealth(solar.allFindings)
+  const hSavings  = overallHealth(savings.allFindings)
+  const hTenant   = overallHealth(tenant.allFindings)
+  const hLighting = overallHealth(lighting.allFindings)
 
   const allF = [
     ...chiller.allFindings, ...ahu.allFindings,
     ...power.allFindings,   ...solar.allFindings,
+    ...tenant.allFindings,  ...lighting.allFindings,
   ]
   const critCount = allF.filter(f => f.severity === 'critical').length
   const warnCount = allF.filter(f => f.severity === 'warning').length
@@ -95,6 +104,9 @@ const AppShell = observer(() => {
     { key: '/power',   icon: <BankOutlined />,        label: navLabel('Power & Grid', hPower),    title: 'Power & Grid' },
     { key: '/solar',   icon: <SunOutlined />,         label: navLabel('Solar & Export', hSolar),  title: 'Solar & Export' },
     { key: '/savings', icon: <RiseOutlined />,        label: navLabel('Energy Savings', hSavings),title: 'Energy Savings' },
+    { key: '/tenant',  icon: <ShopOutlined />,        label: navLabel('Tenant Billing', hTenant), title: 'Tenant Billing' },
+    { key: '/lighting',icon: <BulbOutlined />,        label: navLabel('Lighting Monitoring', hLighting), title: 'Lighting Monitoring' },
+    { key: '/lighting-control', icon: <ControlOutlined />, label: 'Lighting Control', title: 'Lighting Control' },
   ]
 
   const adminItems: MenuItem[] = user.role === 'admin' ? [
@@ -272,6 +284,9 @@ const AppShell = observer(() => {
             <Route path="/power"   element={<PowerGridPage />} />
             <Route path="/solar"   element={<SolarPage />} />
             <Route path="/savings" element={<SavingsPage />} />
+            <Route path="/tenant"  element={<TenantPage />} />
+            <Route path="/lighting" element={<LightingPage />} />
+            <Route path="/lighting-control" element={<LightingControlPage />} />
             <Route path="/alarms"  element={<AlarmsPage />} />
             {user.role === 'admin' && (
               <Route path="/users" element={<UsersPage />} />
