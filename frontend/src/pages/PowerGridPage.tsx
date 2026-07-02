@@ -1,121 +1,152 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { observer } from 'mobx-react-lite'
-import { Tabs, Card, Row, Col, Statistic, Alert, Typography, Progress, Tag } from 'antd'
+import { Tabs, Card, Row, Col, Statistic, Alert, Typography, Table, Tag, Badge } from 'antd'
 import ReactECharts from 'echarts-for-react'
 import { useStore } from '../stores'
 import { FDDPanel } from '../components/FDDPanel'
+import { RangeBar, buildZones, zoneAt, ZONE_COLOR } from '../components/RangeBar'
+import { Sparkline } from '../components/Sparkline'
+import { TimelineSwitch, type TimelineDays } from '../components/TimelineSwitch'
+import { useEchartsTheme } from '../theme/echartsTheme'
+import { windowHistory, timeLabels, labelInterval, dayMarkLine } from '../utils/history'
 import type { Substation } from '../stores/PowerGridStore'
 
-const { Title, Paragraph } = Typography
+const { Title, Paragraph, Text } = Typography
 const PURPLE = '#5a0057'
 
-const TIMES = Array.from({ length: 288 }, (_, i) => {
-  const h = Math.floor(i * 24 / 288)
-  const m = Math.round((i * 24 / 288 - h) * 60)
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
-})
+const PF_ZONES     = buildZones({ min: 0.80, max: 1.00, critLow: 0.85, warnLow: 0.92 })
+const THD_V_ZONES  = buildZones({ min: 0, max: 10, warnHigh: 5, critHigh: 8 })
+const THD_I_ZONES  = buildZones({ min: 0, max: 25, warnHigh: 15, critHigh: 20 })
+const UNBAL_ZONES  = buildZones({ min: 0, max: 5, warnHigh: 2, critHigh: 3 })
+const FREQ_ZONES   = buildZones({ min: 49.5, max: 50.5, critLow: 49.8, warnLow: 49.9, warnHigh: 50.1, critHigh: 50.2 })
+const DEMAND_PCT_ZONES = buildZones({ min: 0, max: 110, warnHigh: 85, critHigh: 95 })
 
-function pfColor(pf: number): string {
-  return pf >= 0.92 ? '#52c41a' : pf >= 0.85 ? '#faad14' : '#ff4d4f'
+function healthBadge(pfHealth: 'ok' | 'warning' | 'critical') {
+  return pfHealth === 'critical' ? <Badge status="error" text="Critical" />
+       : pfHealth === 'warning'  ? <Badge status="warning" text="Warning" />
+       :                           <Badge status="success" text="Normal" />
 }
 
-function pfPercent(pf: number): number {
-  return Math.round(((pf - 0.80) / (1.00 - 0.80)) * 100)
+function coloredText(value: number, zones: ReturnType<typeof buildZones>, text: string) {
+  const lvl = zoneAt(zones, value)
+  return <span style={{ color: lvl === 'ok' ? undefined : ZONE_COLOR[lvl], fontWeight: lvl === 'ok' ? 400 : 600 }}>{text}</span>
 }
 
 const PowerGridPage: React.FC = observer(() => {
-  const { power } = useStore()
+  const store = useStore()
+  const { power } = store
   const { substations, totalBuildingKw, chillerPlantKw, airsideKw, mechFanKw,
           todayTotalKwh, todayChillerKwh, todayAirsideKwh, todayMechFanKwh, todayOtherKwh,
-          heatmapData, allFindings } = power
+          heatmapData, allFindings, avgPF } = power
+  const chartTheme = useEchartsTheme()
+  const [days, setDays] = useState<TimelineDays>(1)
 
   const criticalPF = substations.filter(s => s.pf < 0.85)
   const warningPF  = substations.filter(s => s.pf < 0.92 && s.pf >= 0.85)
+  const labels = timeLabels(days)
+  const interval = labelInterval(days)
 
   // ── Demand Profiles Tab ───────────────────────────────────────────────────
   const demandOpt = {
-    tooltip: { trigger: 'axis' as const, formatter: (params: any[]) =>
-      params.map((p: any) => `${p.seriesName}: <b>${p.value.toFixed(0)} kW</b>`).join('<br/>') },
+    tooltip: { trigger: 'axis' as const },
     legend: { data: substations.map(s => s.name), bottom: 0 },
-    grid: { bottom: 50, top: 20, right: 20 },
-    xAxis: {
-      type: 'category' as const, data: TIMES,
-      axisLabel: { interval: 47, fontSize: 11 },
-    },
-    yAxis: { type: 'value' as const, name: 'kW', nameTextStyle: { fontSize: 11 } },
-    series: substations.map(s => ({
+    grid: { bottom: 50, left: 55, right: 20, top: 40, containLabel: true },
+    xAxis: { type: 'category' as const, data: labels, axisLabel: { interval } },
+    yAxis: { type: 'value' as const, name: 'kW' },
+    series: substations.map((s, i) => ({
       name: s.name, type: 'line' as const, smooth: true, showSymbol: false,
-      data: s.demandHistory,
-      lineStyle: { color: s.color, width: 2 },
-      itemStyle: { color: s.color },
+      data: windowHistory(s.demandHistory, days),
+      lineStyle: { color: s.color, width: 2 }, itemStyle: { color: s.color },
       areaStyle: { color: s.color, opacity: 0.05 },
+      ...(i === 0 ? { markLine: dayMarkLine(days, store.darkMode) } : {}),
     })),
+  }
+
+  const demandCompareOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 80, right: 60, top: 10, bottom: 20 },
+    xAxis: { type: 'value' as const, name: 'kW' },
+    yAxis: { type: 'category' as const, data: substations.map(s => s.name), inverse: true },
+    series: [{
+      type: 'bar' as const, data: substations.map(s => ({ value: Math.round(s.kw), itemStyle: { color: s.color } })),
+      barWidth: 18, label: { show: true, position: 'right' as const, formatter: '{c} kW' },
+    }],
   }
 
   const demandTab = (
     <div>
-      {/* Total + per-substation stat cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-        <Col xs={24} sm={6}>
-          <Card style={{
-            textAlign: 'center', background: `rgba(90,0,87,0.06)`,
-            border: `2px solid ${PURPLE}`,
-          }}>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>Total Building</div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: PURPLE }}>{totalBuildingKw.toFixed(0)}</div>
-            <div style={{ fontSize: 13, color: '#888' }}>kW</div>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={7}>
+          <Card style={{ height: '100%', textAlign: 'center', background: 'rgba(90,0,87,0.06)', border: `2px solid ${PURPLE}` }}>
+            <Statistic title="Total Building Demand" value={totalBuildingKw.toFixed(0)} suffix="kW"
+              valueStyle={{ color: PURPLE, fontWeight: 800, fontSize: 30 }} />
           </Card>
         </Col>
-        {substations.map(s => (
-          <Col xs={12} sm={4} key={s.id}>
-            <Card size="small" style={{ textAlign: 'center', borderTop: `3px solid ${s.color}` }}>
-              <div style={{ fontSize: 11, color: '#888' }}>{s.name}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.kw.toFixed(0)}</div>
-              <div style={{ fontSize: 10, color: '#aaa' }}>kW</div>
-              <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>
-                Peak: {Math.max(...s.demandHistory).toFixed(0)} kW
-              </div>
-            </Card>
-          </Col>
-        ))}
+        <Col xs={24} md={17}>
+          <Card title="Demand by Substation" size="small">
+            <ReactECharts option={demandCompareOpt} theme={chartTheme} style={{ height: 40 + substations.length * 40 }} />
+          </Card>
+        </Col>
       </Row>
 
-      <Card title="24h Demand Profile — All Substations">
-        <ReactECharts option={demandOpt} style={{ height: 350 }} />
+      <Card title="Substations" size="small" style={{ marginBottom: 16 }}>
+        <Table
+          dataSource={substations}
+          rowKey="id"
+          pagination={false}
+          size="small"
+          scroll={{ x: 900 }}
+          columns={[
+            { title: 'Substation', dataIndex: 'name', key: 'name', fixed: 'left', width: 100, render: (v) => <strong>{v}</strong> },
+            { title: 'Demand', key: 'kw', width: 150, render: (_, s: Substation) =>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>{s.kw.toFixed(0)} kW</span><Sparkline data={windowHistory(s.demandHistory, 1)} color={s.color} />
+              </div> },
+            { title: '% of Rated', key: 'pctrated', width: 150, render: (_, s: Substation) =>
+              <RangeBar label="" value={(s.kw / s.ratedKw) * 100} unit="%" min={0} max={110} zones={DEMAND_PCT_ZONES} precision={0} bare barWidth={70} /> },
+            { title: 'Rated', key: 'rated', width: 100, render: (_, s: Substation) => `${s.ratedKw} kW` },
+            { title: 'Today', key: 'kwh', width: 120, render: (_, s: Substation) => `${Math.round(s.todayKwh).toLocaleString()} kWh` },
+            { title: 'Health', key: 'h', width: 100, render: (_, s: Substation) => healthBadge(s.pfHealth) },
+          ]}
+        />
+      </Card>
+
+      <Card title="Demand Profile" extra={<TimelineSwitch value={days} onChange={setDays} />}>
+        <ReactECharts option={demandOpt} theme={chartTheme} style={{ height: 350 }} />
       </Card>
     </div>
   )
 
   // ── Power Factor Tab ──────────────────────────────────────────────────────
+  const pfCompareOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 80, right: 60, top: 10, bottom: 20 },
+    xAxis: { type: 'value' as const, min: 0.8, max: 1.0 },
+    yAxis: { type: 'category' as const, data: substations.map(s => s.name), inverse: true },
+    series: [{
+      type: 'bar' as const, data: substations.map(s => ({
+        value: Number(s.pf.toFixed(3)), itemStyle: { color: ZONE_COLOR[zoneAt(PF_ZONES, s.pf)] },
+      })),
+      barWidth: 18, label: { show: true, position: 'right' as const, formatter: '{c}' },
+    }],
+  }
+
   const pfHistOpt = {
     tooltip: { trigger: 'axis' as const },
     legend: { data: substations.map(s => s.name), bottom: 0 },
-    grid: { bottom: 50, top: 20 },
-    xAxis: { type: 'category' as const, data: TIMES, axisLabel: { interval: 47 } },
-    yAxis: {
-      type: 'value' as const, name: 'Power Factor', min: 0.78, max: 1.01,
-      axisLabel: { formatter: (v: number) => v.toFixed(2) },
-    },
-    series: [
-      // Reference lines
-      { type: 'line' as const, name: 'Target 0.92', data: TIMES.map(() => 0.92),
-        lineStyle: { color: '#52c41a', type: 'dashed' as const, width: 1 },
-        showSymbol: false, symbol: 'none', itemStyle: { color: '#52c41a' } },
-      { type: 'line' as const, name: 'Alert 0.85', data: TIMES.map(() => 0.85),
-        lineStyle: { color: '#ff4d4f', type: 'dashed' as const, width: 1 },
-        showSymbol: false, symbol: 'none', itemStyle: { color: '#ff4d4f' } },
-      ...substations.map(s => ({
-        name: s.name, type: 'line' as const, smooth: true, showSymbol: false,
-        data: s.pfHistory,
-        lineStyle: { color: s.color, width: 2 },
-        itemStyle: { color: s.color },
-      })),
-    ],
+    grid: { bottom: 50, left: 55, right: 20, top: 40, containLabel: true },
+    xAxis: { type: 'category' as const, data: labels, axisLabel: { interval } },
+    yAxis: { type: 'value' as const, name: 'Power Factor', min: 0.78, max: 1.01 },
+    series: substations.map((s, i) => ({
+      name: s.name, type: 'line' as const, smooth: true, showSymbol: false,
+      data: windowHistory(s.pfHistory, days),
+      lineStyle: { color: s.color, width: 2 }, itemStyle: { color: s.color },
+      ...(i === 0 ? { markLine: dayMarkLine(days, store.darkMode) } : {}),
+    })),
   }
 
   const pfTab = (
     <div>
-      {/* Alert banners */}
       {criticalPF.map(s => (
         <Alert key={s.id} type="error" showIcon style={{ marginBottom: 10 }}
           message={`Power Factor Alert — ${s.name}: ${s.pf.toFixed(3)} — Below critical threshold (0.85)`}
@@ -130,178 +161,204 @@ const PowerGridPage: React.FC = observer(() => {
           message="All substations within power factor target (≥ 0.92)" />
       )}
 
-      {/* Explanation */}
-      <Card style={{ marginBottom: 16, background: '#fffbe6', border: '1px solid #ffe58f' }}>
-        <Paragraph style={{ marginBottom: 0, fontSize: 13 }}>
-          <strong>Why Power Factor Matters:</strong> Low PF increases apparent power demand and triggers UKPN
-          network charges (reactive power penalty above 33% kVArh / kWh ratio).
-          Target: <Tag color="success">PF ≥ 0.92</Tag>
-          Warning: <Tag color="warning">PF 0.85–0.92</Tag>
-          Critical: <Tag color="error">PF &lt; 0.85</Tag>
-        </Paragraph>
-      </Card>
-
-      {/* Per-substation PF gauges */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-        {substations.map(s => (
-          <Col key={s.id} xs={24} sm={12} md={6}>
-            <Card style={{
-              textAlign: 'center',
-              border: `2px solid ${pfColor(s.pf)}`,
-              background: s.pf < 0.85 ? '#fff1f0' : s.pf < 0.92 ? '#fffbe6' : '#f6ffed',
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{s.name}</div>
-              <div style={{ fontSize: 36, fontWeight: 800, color: pfColor(s.pf), lineHeight: 1 }}>
-                {s.pf.toFixed(3)}
-              </div>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Power Factor</div>
-              <Progress
-                percent={pfPercent(s.pf)}
-                strokeColor={pfColor(s.pf)}
-                trailColor="#f0f0f0"
-                showInfo={false}
-                size="small"
-              />
-              <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
-                {s.kw.toFixed(0)} kW &nbsp;|&nbsp; {s.current.toFixed(0)} A
-              </div>
-              <Tag color={s.pfHealth === 'ok' ? 'success' : s.pfHealth === 'warning' ? 'warning' : 'error'}
-                style={{ marginTop: 8 }}>
-                {s.pfHealth === 'ok' ? 'OK — No Action' : s.pfHealth === 'warning' ? 'Review Required' : 'Action Required'}
-              </Tag>
-            </Card>
-          </Col>
-        ))}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={6}>
+          <Card style={{ height: '100%', textAlign: 'center' }}>
+            <Statistic title="Building Avg PF" value={avgPF.toFixed(3)}
+              valueStyle={{ color: ZONE_COLOR[zoneAt(PF_ZONES, avgPF)], fontWeight: 700, fontSize: 26 }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={18}>
+          <Card title="PF by Substation" size="small">
+            <ReactECharts option={pfCompareOpt} theme={chartTheme} style={{ height: 40 + substations.length * 40 }} />
+          </Card>
+        </Col>
       </Row>
 
-      <Card title="Power Factor Trend — 24h">
-        <ReactECharts option={pfHistOpt} style={{ height: 300 }} />
+      <Card size="small" style={{ marginBottom: 16, background: '#fffbe6', border: '1px solid #ffe58f' }}>
+        <Text style={{ fontSize: 13 }}>
+          <strong>Why Power Factor Matters:</strong> Low PF increases apparent power demand and triggers UKPN
+          network charges. Target: <Tag color="success">PF ≥ 0.92</Tag> Warning: <Tag color="warning">0.85–0.92</Tag> Critical: <Tag color="error">&lt; 0.85</Tag>
+        </Text>
+      </Card>
+
+      <Card title="Substations — Electrical Detail" size="small" style={{ marginBottom: 16 }}>
+        <Table
+          dataSource={substations}
+          rowKey="id"
+          pagination={false}
+          size="small"
+          scroll={{ x: 950 }}
+          columns={[
+            { title: 'Substation', dataIndex: 'name', key: 'name', fixed: 'left', width: 100, render: (v) => <strong>{v}</strong> },
+            { title: 'PF', key: 'pf', width: 140, render: (_, s: Substation) =>
+              <RangeBar label="" value={s.pf} min={0.80} max={1.00} zones={PF_ZONES} precision={3} bare barWidth={70} /> },
+            { title: 'kW', key: 'kw', width: 90, render: (_, s: Substation) => s.kw.toFixed(0) },
+            { title: 'kVAR', key: 'kvar', width: 90, render: (_, s: Substation) => s.kvar.toFixed(0) },
+            { title: 'kVA', key: 'kva', width: 90, render: (_, s: Substation) => s.kva.toFixed(0) },
+            { title: 'Current', key: 'i', width: 90, render: (_, s: Substation) => `${s.current.toFixed(0)} A` },
+            { title: 'Voltage', key: 'v', width: 100, render: (_, s: Substation) => `${(s.voltage / 1000).toFixed(1)} kV` },
+            { title: 'Health', key: 'h', width: 100, render: (_, s: Substation) => healthBadge(s.pfHealth) },
+          ]}
+        />
+      </Card>
+
+      <Card title="Power Factor Trend" extra={<TimelineSwitch value={days} onChange={setDays} />}>
+        <ReactECharts option={pfHistOpt} theme={chartTheme} style={{ height: 300 }} />
+      </Card>
+    </div>
+  )
+
+  // ── Power Quality (THD / Harmonics) Tab ───────────────────────────────────
+  function harmonicsOpt(s: Substation) {
+    const orders = s.harmonicsI.map(h => `${h.order}${h.order === 3 ? 'rd' : 'th'}`)
+    return {
+      tooltip: { trigger: 'axis' as const },
+      legend: { data: ['Voltage %', 'Current %'], bottom: 0 },
+      grid: { left: 45, right: 20, top: 40, bottom: 40, containLabel: true },
+      xAxis: { type: 'category' as const, data: orders, name: 'Harmonic order' },
+      yAxis: { type: 'value' as const, name: '%' },
+      series: [
+        { name: 'Voltage %', type: 'bar' as const, data: s.harmonicsV.map(h => Number(h.pct.toFixed(2))), itemStyle: { color: '#1677ff' } },
+        { name: 'Current %', type: 'bar' as const, data: s.harmonicsI.map(h => Number(h.pct.toFixed(2))), itemStyle: { color: '#e74c3c' } },
+      ],
+    }
+  }
+
+  const pqExpandedRow = (s: Substation) => (
+    <Row gutter={24}>
+      <Col xs={24} md={14}>
+        <ReactECharts option={harmonicsOpt(s)} theme={chartTheme} style={{ height: 220 }} />
+      </Col>
+      <Col xs={24} md={10}>
+        <RangeBar label={`${s.name} — Frequency`} value={s.freq} unit=" Hz" min={49.5} max={50.5} zones={FREQ_ZONES} precision={2} compact />
+        <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 8 }}>
+          Phase voltages: <strong>{s.vL1.toFixed(0)} / {s.vL2.toFixed(0)} / {s.vL3.toFixed(0)} V</strong><br />
+          Phase currents: <strong>{s.iL1.toFixed(0)} / {s.iL2.toFixed(0)} / {s.iL3.toFixed(0)} A</strong><br />
+          Current unbalance: {coloredText(s.currentUnbalance, UNBAL_ZONES, `${s.currentUnbalance.toFixed(1)}%`)}<br />
+          Breaker: <Tag color={s.breakerClosed ? 'success' : 'error'}>{s.breakerClosed ? 'CLOSED' : 'OPEN'}</Tag>
+          Meter comms: <Tag color={s.meterOk ? 'success' : 'error'}>{s.meterOk ? 'OK' : 'FAIL'}</Tag>
+        </div>
+      </Col>
+    </Row>
+  )
+
+  const pqTab = (
+    <div>
+      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          THD-V, THD-I and individual odd harmonics (3rd–13th) are standard on BACnet-native Class 0.5S multifunction
+          meters (e.g. Schneider PM5000 series) — no separate power-quality analyzer is required. THD here is derived
+          as √(Σ harmonic²), consistent with the individual harmonics shown in each row's detail view.
+          IEEE 519 guidance: THD-I ≤ 15% (industrial), THD-V ≤ 5% (transmission-level).
+        </Text>
+      </Card>
+      <Card title="Power Quality by Substation" size="small">
+        <Table
+          dataSource={substations}
+          rowKey="id"
+          pagination={false}
+          size="small"
+          scroll={{ x: 900 }}
+          expandable={{ expandedRowRender: pqExpandedRow }}
+          columns={[
+            { title: 'Substation', dataIndex: 'name', key: 'name', fixed: 'left', width: 100, render: (v) => <strong>{v}</strong> },
+            { title: 'THD-V', key: 'thdv', width: 140, render: (_, s: Substation) =>
+              <RangeBar label="" value={s.thdV} unit="%" min={0} max={10} zones={THD_V_ZONES} precision={1} bare barWidth={70} /> },
+            { title: 'THD-I', key: 'thdi', width: 140, render: (_, s: Substation) =>
+              <RangeBar label="" value={s.thdI} unit="%" min={0} max={25} zones={THD_I_ZONES} precision={1} bare barWidth={70} /> },
+            { title: 'Voltage Unbalance', key: 'vunbal', width: 160, render: (_, s: Substation) =>
+              <RangeBar label="" value={s.voltageUnbalance} unit="%" min={0} max={5} zones={UNBAL_ZONES} precision={1} bare barWidth={70} /> },
+            { title: 'Frequency', key: 'freq', width: 100, render: (_, s: Substation) => `${s.freq.toFixed(2)} Hz` },
+            { title: 'Health', key: 'h', width: 100, render: (_, s: Substation) => healthBadge(s.pfHealth) },
+          ]}
+        />
       </Card>
     </div>
   )
 
   // ── Sub-Meters Tab ────────────────────────────────────────────────────────
-  const stackedBarOpt = {
-    tooltip: { trigger: 'item' as const },
-    legend: { data: ['Chiller Plant', 'Airside (AHU)', 'Mech Fans', 'Other'], bottom: 0 },
-    grid: { bottom: 50, top: 20 },
-    xAxis: { type: 'value' as const, name: 'kWh' },
-    yAxis: { type: 'category' as const, data: ['Today'] },
-    series: [
-      { name: 'Chiller Plant', type: 'bar' as const, stack: 'total',
-        data: [Math.round(todayChillerKwh)], itemStyle: { color: PURPLE } },
-      { name: 'Airside (AHU)', type: 'bar' as const, stack: 'total',
-        data: [Math.round(todayAirsideKwh)], itemStyle: { color: '#9b59b6' } },
-      { name: 'Mech Fans', type: 'bar' as const, stack: 'total',
-        data: [Math.round(todayMechFanKwh)], itemStyle: { color: '#3498db' } },
-      { name: 'Other', type: 'bar' as const, stack: 'total',
-        data: [Math.round(todayOtherKwh)], itemStyle: { color: '#bbb' } },
-    ],
+  const subMeterDonutOpt = {
+    tooltip: { trigger: 'item' as const, formatter: '{b}: {c} kWh ({d}%)' },
+    legend: { show: false },
+    series: [{
+      type: 'pie' as const, radius: ['55%', '80%'],
+      label: { show: false }, labelLine: { show: false },
+      data: [
+        { name: 'Chiller Plant', value: Math.round(todayChillerKwh), itemStyle: { color: PURPLE } },
+        { name: 'Airside (AHU)', value: Math.round(todayAirsideKwh), itemStyle: { color: '#9b59b6' } },
+        { name: 'Mech Fans', value: Math.round(todayMechFanKwh), itemStyle: { color: '#3498db' } },
+        { name: 'Other', value: Math.round(todayOtherKwh), itemStyle: { color: '#bbb' } },
+      ],
+    }],
   }
 
   const subMetersTab = (
     <div>
-      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-        <Col xs={24} sm={6}>
-          <Card style={{ textAlign: 'center', background: `rgba(90,0,87,0.05)`, border: `2px solid ${PURPLE}` }}>
-            <Statistic title="Total Building Today" value={Math.round(todayTotalKwh).toLocaleString()} suffix="kWh"
-              valueStyle={{ color: PURPLE, fontWeight: 700 }} />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card style={{ textAlign: 'center', borderTop: `3px solid ${PURPLE}` }}>
-            <Statistic title="Chiller Plant" value={Math.round(todayChillerKwh).toLocaleString()} suffix="kWh"
-              valueStyle={{ color: PURPLE }} />
-            <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-              Now: {chillerPlantKw.toFixed(0)} kW
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={9}>
+          <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <ReactECharts option={subMeterDonutOpt} theme={chartTheme} style={{ width: 130, height: 130, flexShrink: 0 }} />
+              <div style={{ marginLeft: 8 }}>
+                <div style={{ fontSize: 11, color: '#8c8c8c' }}>Total Building Today</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: PURPLE, marginBottom: 6 }}>{Math.round(todayTotalKwh).toLocaleString()} kWh</div>
+                <div style={{ fontSize: 11 }}><span style={{ color: PURPLE }}>■</span> Chiller Plant {Math.round(todayChillerKwh).toLocaleString()}</div>
+                <div style={{ fontSize: 11 }}><span style={{ color: '#9b59b6' }}>■</span> Airside {Math.round(todayAirsideKwh).toLocaleString()}</div>
+                <div style={{ fontSize: 11 }}><span style={{ color: '#3498db' }}>■</span> Mech Fans {Math.round(todayMechFanKwh).toLocaleString()}</div>
+                <div style={{ fontSize: 11 }}><span style={{ color: '#bbb' }}>■</span> Other {Math.round(todayOtherKwh).toLocaleString()}</div>
+              </div>
             </div>
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card style={{ textAlign: 'center', borderTop: '3px solid #9b59b6' }}>
-            <Statistic title="Airside (AHU)" value={Math.round(todayAirsideKwh).toLocaleString()} suffix="kWh"
-              valueStyle={{ color: '#9b59b6' }} />
-            <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-              Now: {airsideKw.toFixed(0)} kW
-            </div>
+        <Col xs={12} md={5}>
+          <Card style={{ textAlign: 'center', height: '100%' }}>
+            <Statistic title="Chiller Plant Now" value={chillerPlantKw.toFixed(0)} suffix="kW" valueStyle={{ color: PURPLE }} />
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card style={{ textAlign: 'center', borderTop: '3px solid #3498db' }}>
-            <Statistic title="Mech Fans" value={Math.round(todayMechFanKwh).toLocaleString()} suffix="kWh"
-              valueStyle={{ color: '#3498db' }} />
-            <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-              Now: {mechFanKw.toFixed(0)} kW
-            </div>
+        <Col xs={12} md={5}>
+          <Card style={{ textAlign: 'center', height: '100%' }}>
+            <Statistic title="Airside Now" value={airsideKw.toFixed(0)} suffix="kW" valueStyle={{ color: '#9b59b6' }} />
+          </Card>
+        </Col>
+        <Col xs={12} md={5}>
+          <Card style={{ textAlign: 'center', height: '100%' }}>
+            <Statistic title="Mech Fans Now" value={mechFanKw.toFixed(0)} suffix="kW" valueStyle={{ color: '#3498db' }} />
           </Card>
         </Col>
       </Row>
-
-      <Card title="Energy Breakdown by Sub-Meter — Today (kWh)">
-        <ReactECharts option={stackedBarOpt} style={{ height: 180 }} />
-      </Card>
     </div>
   )
 
   // ── Demand Heatmap Tab ────────────────────────────────────────────────────
   const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2,'0')}:00`)
+  const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`)
 
   const flatData: [number, number, number][] = []
-  heatmapData.forEach((row, dayIdx) => {
-    row.forEach((val, hr) => {
-      flatData.push([hr, dayIdx, val])
-    })
-  })
+  heatmapData.forEach((row, dayIdx) => row.forEach((val, hr) => flatData.push([hr, dayIdx, val])))
   const allVals = flatData.map(d => d[2])
   const minV = Math.min(...allVals)
   const maxV = Math.max(...allVals)
 
   const heatmapOpt = {
-    tooltip: {
-      formatter: (p: any) =>
-        `${DAYS[p.data[1]]} ${HOURS[p.data[0]]}: <b>${p.data[2]} kW</b>`,
-    },
+    tooltip: { formatter: (p: any) => `${DAYS[p.data[1]]} ${HOURS[p.data[0]]}: <b>${p.data[2]} kW</b>` },
     grid: { bottom: 60, top: 40, left: 60, right: 80 },
-    xAxis: {
-      type: 'category' as const,
-      data: HOURS,
-      splitArea: { show: true },
-      axisLabel: { interval: 1, fontSize: 10 },
-    },
-    yAxis: {
-      type: 'category' as const,
-      data: DAYS,
-      splitArea: { show: true },
-    },
+    xAxis: { type: 'category' as const, data: HOURS, splitArea: { show: true }, axisLabel: { interval: 1, fontSize: 10 } },
+    yAxis: { type: 'category' as const, data: DAYS, splitArea: { show: true } },
     visualMap: {
-      min: minV, max: maxV,
-      calculable: true,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: 0,
-      inRange: { color: ['#f0f2f5', 'rgba(90,0,87,0.3)', PURPLE] },
-      text: ['High', 'Low'],
-      textStyle: { fontSize: 11 },
+      min: minV, max: maxV, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
+      inRange: { color: ['#f0f2f5', 'rgba(90,0,87,0.3)', PURPLE] }, text: ['High', 'Low'], textStyle: { fontSize: 11 },
     },
-    series: [{
-      name: 'Demand (kW)',
-      type: 'heatmap' as const,
-      data: flatData,
-      label: { show: false },
-      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } },
-    }],
+    series: [{ name: 'Demand (kW)', type: 'heatmap' as const, data: flatData, label: { show: false } }],
   }
 
   const heatmapTab = (
-    <Card title="Demand Pattern — Last 7 Days (T1 Main)" extra={
-      <span style={{ fontSize: 12, color: '#888' }}>Hour of day × Day of week</span>
-    }>
+    <Card title="Total Building Demand — Last 7 Days" extra={<span style={{ fontSize: 12, color: '#888' }}>Hour of day × Day of week</span>}>
       <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
         Airport demand shows two characteristic peaks: morning bank (07:00–10:00) and afternoon bank (14:00–18:00),
-        with overnight troughs. Weekend patterns show reduced early-morning demand.
+        with reduced weekend demand.
       </Paragraph>
-      <ReactECharts option={heatmapOpt} style={{ height: 360 }} />
+      <ReactECharts option={heatmapOpt} theme={chartTheme} style={{ height: 360 }} />
     </Card>
   )
 
@@ -309,15 +366,16 @@ const PowerGridPage: React.FC = observer(() => {
     <div style={{ padding: '24px 28px' }}>
       <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Power &amp; Grid</Title>
       <Paragraph type="secondary" style={{ marginBottom: 20 }}>
-        4 HV substations — demand monitoring, power factor analysis, and sub-meter breakdown.
+        4 HV substations — demand, power factor, power quality (THD/harmonics) and sub-meter breakdown.
       </Paragraph>
       <Tabs
         defaultActiveKey="demand"
         items={[
-          { key: 'demand',    label: 'Demand Profiles',  children: demandTab },
-          { key: 'pf',        label: 'Power Factor ⚡',   children: pfTab },
-          { key: 'submeters', label: 'Sub-Meters',        children: subMetersTab },
-          { key: 'heatmap',   label: 'Demand Heatmap',    children: heatmapTab },
+          { key: 'demand',    label: 'Demand Profiles',        children: demandTab },
+          { key: 'pf',        label: 'Power Factor',           children: pfTab },
+          { key: 'pq',        label: 'Power Quality',          children: pqTab },
+          { key: 'submeters', label: 'Sub-Meters',             children: subMetersTab },
+          { key: 'heatmap',   label: 'Demand Heatmap',         children: heatmapTab },
           { key: 'alarms',    label: `Alarms (${allFindings.length})`, children: <FDDPanel findings={allFindings} systemLabel="Power & Grid" /> },
         ]}
       />

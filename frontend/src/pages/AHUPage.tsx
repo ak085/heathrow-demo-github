@@ -1,192 +1,278 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { observer } from 'mobx-react-lite'
-import { Tabs, Card, Row, Col, Statistic, Table, Badge, Tag, Typography } from 'antd'
+import { Card, Row, Col, Statistic, Table, Badge, Typography, Tabs, Tag, Progress } from 'antd'
 import ReactECharts from 'echarts-for-react'
 import { useStore } from '../stores'
 import { FDDPanel } from '../components/FDDPanel'
+import { RangeBar, buildZones, zoneAt, ZONE_COLOR } from '../components/RangeBar'
+import { Sparkline } from '../components/Sparkline'
+import { TimelineSwitch, type TimelineDays } from '../components/TimelineSwitch'
+import { useEchartsTheme } from '../theme/echartsTheme'
+import { windowHistory, timeLabels, labelInterval, dayMarkLine } from '../utils/history'
 import type { AHU } from '../stores/AHUStore'
 
-const { Title, Paragraph } = Typography
+const { Title, Paragraph, Text } = Typography
 const PURPLE = '#5a0057'
-const COLORS = [PURPLE, '#9b59b6', '#e74c3c', '#e67e22', '#2ecc71', '#3498db']
+const LINE_COLORS = ['#5a0057', '#9b59b6', '#e74c3c', '#1677ff', '#13a8a8', '#faad14', '#52c41a', '#eb2f96']
 
-function healthBadge(h: 'ok' | 'warning' | 'critical') {
-  return h === 'critical' ? <Badge status="error"   text="Critical" />
+const SAT_ZONES       = buildZones({ min: 11, max: 19, critLow: 11.5, warnLow: 12.5, warnHigh: 16.5, critHigh: 17.5 })
+const ZONE_TEMP_ZONES = buildZones({ min: 21, max: 30, critLow: 22, warnLow: 23, warnHigh: 28, critHigh: 29 })
+const CO2_ZONES       = buildZones({ min: 350, max: 1150, warnHigh: 800, critHigh: 1000 })
+const FILTER_DP_ZONES = buildZones({ min: 70, max: 240, warnHigh: 150, critHigh: 200 })
+const NEUTRAL_ZONES   = buildZones({ min: 0, max: 100 })
+
+function healthTag(h: 'ok' | 'warning' | 'critical') {
+  return h === 'critical' ? <Badge status="error" text="Critical" />
        : h === 'warning'  ? <Badge status="warning" text="Warning" />
        :                    <Badge status="success" text="Normal" />
 }
 
-const TIMES = Array.from({ length: 288 }, (_, i) => {
-  const h = Math.floor(i * 24 / 288)
-  const m = Math.round((i * 24 / 288 - h) * 60)
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
-})
+function typeTag(t: AHU['type']) {
+  return t === 'control-station' ? <Tag color="blue">Control Station</Tag> : <Tag color="default">Electrical Room</Tag>
+}
+
+function coloredText(value: number, zones: ReturnType<typeof buildZones>, text: string) {
+  const lvl = zoneAt(zones, value)
+  return <span style={{ color: lvl === 'ok' ? undefined : ZONE_COLOR[lvl], fontWeight: lvl === 'ok' ? 400 : 600 }}>{text}</span>
+}
 
 const AHUPage: React.FC = observer(() => {
-  const { ahu } = useStore()
-  const { ahus, avgSAT, avgZoneT, normalCount, filterAlerts, allFindings } = ahu
+  const store = useStore()
+  const { ahu } = store
+  const { ahus, avgSAT, avgZoneT, avgCO2, totalFanKw, filterAlerts, allFindings } = ahu
+  const chartTheme = useEchartsTheme()
+  const [days, setDays] = useState<TimelineDays>(1)
 
-  // ── Overview ─────────────────────────────────────────────────────────────
+  const csUnits = ahus.filter(a => a.type === 'control-station')
+  const fanKwSum = ahus.reduce((s, a) => s + a.fanKW, 0)
+  const freshAirKwSum = ahus.reduce((s, a) => s + a.freshAirFanKW, 0)
+  const normalCount = ahus.filter(a => a.health === 'ok').length
+
+  const powerBreakdownOpt = {
+    tooltip: { trigger: 'item' as const, formatter: '{b}: {c} kW ({d}%)' },
+    series: [{
+      type: 'pie' as const, radius: ['55%', '80%'],
+      label: { show: false }, labelLine: { show: false },
+      data: [
+        { name: 'EC Fans', value: Number(fanKwSum.toFixed(1)), itemStyle: { color: PURPLE } },
+        { name: 'Fresh Air Fans', value: Number(freshAirKwSum.toFixed(1)), itemStyle: { color: '#1677ff' } },
+      ],
+    }],
+  }
+
+  const zoneTempCompareOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 100, right: 30, top: 10, bottom: 20 },
+    xAxis: { type: 'value' as const, min: 20, max: 30 },
+    yAxis: { type: 'category' as const, data: ahus.map(a => a.name), inverse: true },
+    series: [{
+      type: 'bar' as const, data: ahus.map(a => ({
+        value: Number(a.zoneTemp.toFixed(1)),
+        itemStyle: { color: ZONE_COLOR[zoneAt(ZONE_TEMP_ZONES, a.zoneTemp)] },
+      })),
+      barWidth: 12,
+      label: { show: true, position: 'right' as const, formatter: '{c}°C' },
+    }],
+  }
+
+  const expandedRow = (a: AHU) => (
+    <Row gutter={24}>
+      <Col xs={24} md={12}>
+        <RangeBar label={`${a.name} — Supply Air Temp`} value={a.sat} unit="°C" min={11} max={19}
+          zones={SAT_ZONES} target={a.satSP} precision={1} compact />
+        <RangeBar label={`${a.name} — Zone Temp`} value={a.zoneTemp} unit="°C" min={21} max={30}
+          zones={ZONE_TEMP_ZONES} target={a.zoneTempSP} precision={1} compact />
+        <RangeBar label={`${a.name} — CHW Valve (actual / AI command)`} value={a.chwValve} unit="%" min={0} max={100}
+          zones={NEUTRAL_ZONES} target={a.chwValveCmd} precision={0} compact />
+      </Col>
+      <Col xs={24} md={12}>
+        {a.type === 'control-station' ? (
+          <>
+            <RangeBar label={`${a.name} — CO₂`} value={a.co2} unit=" ppm" min={350} max={1150} zones={CO2_ZONES} precision={0} compact />
+            <RangeBar label={`${a.name} — Fresh Air Fan (actual / SP)`} value={a.freshAirSpeed} unit="%" min={0} max={100}
+              zones={NEUTRAL_ZONES} target={a.freshAirSpeedSP} precision={0} compact />
+          </>
+        ) : (
+          <Text type="secondary" style={{ fontSize: 12 }}>No CO₂ / fresh-air fan — electrical rooms have fixed 27°C setpoint, no occupancy-driven ventilation (FDS Table 9).</Text>
+        )}
+        <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 8 }}>
+          HVLS: <strong>{a.hvlsOn ? `ON — fixed ${a.hvlsFixedSpeed}%` : 'OFF'}</strong> &nbsp;|&nbsp;
+          Fan kW: <strong>{a.fanKW.toFixed(1)}</strong> &nbsp;|&nbsp;
+          Filter DP: {coloredText(a.filterDP, FILTER_DP_ZONES, `${a.filterDP.toFixed(0)} Pa`)}
+        </div>
+      </Col>
+    </Row>
+  )
+
+  // ── Overview tab ──────────────────────────────────────────────────────────
   const overviewTab = (
     <div>
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={6}>
-          <Card style={{ textAlign: 'center', background: 'rgba(90,0,87,0.05)', border: `1px solid rgba(90,0,87,0.2)` }}>
-            <Statistic title="Normal Operation" value={normalCount} suffix={`/ ${ahus.length}`}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={5}>
+          <Card style={{ height: '100%', textAlign: 'center', background: 'rgba(90,0,87,0.05)', border: '1px solid rgba(90,0,87,0.2)' }}>
+            <Statistic title="AHUs Normal" value={`${normalCount}/${ahus.length}`}
               valueStyle={{ color: PURPLE, fontWeight: 700, fontSize: 26 }} />
+            <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 8 }}>Filter alerts: <strong>{filterAlerts}</strong></div>
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card style={{ textAlign: 'center' }}>
-            <Statistic title="Avg Supply Air Temp" value={avgSAT.toFixed(1)} suffix="°C"
-              valueStyle={{ fontWeight: 700, fontSize: 26 }} />
+        <Col xs={24} md={6}>
+          <Card style={{ height: '100%' }} title="Fleet Averages" bodyStyle={{ paddingBottom: 4 }}>
+            <RangeBar label="Avg Supply Air Temp" value={avgSAT} unit="°C" min={11} max={19} zones={SAT_ZONES} precision={1} compact />
+            <RangeBar label="Avg Zone Temp" value={avgZoneT} unit="°C" min={21} max={30} zones={ZONE_TEMP_ZONES} precision={1} compact />
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card style={{ textAlign: 'center' }}>
-            <Statistic title="Avg Zone Temp" value={avgZoneT.toFixed(1)} suffix="°C"
-              valueStyle={{ fontWeight: 700, fontSize: 26 }} />
+        <Col xs={24} md={6}>
+          <Card style={{ height: '100%' }} bodyStyle={{ paddingBottom: 4 }} title="Avg CO₂ (Control Station)">
+            <RangeBar label="" value={avgCO2} unit=" ppm" min={350} max={1150} zones={CO2_ZONES} precision={0} />
           </Card>
         </Col>
-        <Col xs={12} sm={6}>
-          <Card style={{ textAlign: 'center' }}>
-            <Statistic title="Filter DP Alerts" value={filterAlerts}
-              valueStyle={{ color: filterAlerts > 0 ? '#d48806' : '#52c41a', fontWeight: 700, fontSize: 26 }} />
+        <Col xs={24} md={7}>
+          <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <ReactECharts option={powerBreakdownOpt} theme={chartTheme} style={{ width: 90, height: 90, flexShrink: 0 }} />
+              <div style={{ marginLeft: 8 }}>
+                <div style={{ fontSize: 11, color: '#8c8c8c' }}>Total Fan Power</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: PURPLE }}>{totalFanKw.toFixed(1)} kW</div>
+                <div style={{ fontSize: 11, marginTop: 4 }}><span style={{ color: PURPLE }}>■</span> EC Fans {fanKwSum.toFixed(1)}</div>
+                <div style={{ fontSize: 11 }}><span style={{ color: '#1677ff' }}>■</span> Fresh Air {freshAirKwSum.toFixed(1)}</div>
+              </div>
+            </div>
           </Card>
         </Col>
       </Row>
 
-      <Card title="AHU Status Table">
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24}>
+          <Card title="Zone Temperature by AHU" size="small">
+            <ReactECharts option={zoneTempCompareOpt} theme={chartTheme} style={{ height: 40 + ahus.length * 30 }} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Card title="AHU Fleet" size="small">
         <Table
           dataSource={ahus}
           rowKey="id"
           pagination={false}
           size="small"
-          scroll={{ x: true }}
+          scroll={{ x: 1150 }}
+          expandable={{ expandedRowRender: expandedRow }}
           columns={[
-            { title: 'AHU', dataIndex: 'name', key: 'name', render: v => <strong>{v}</strong>, fixed: 'left' },
-            { title: 'Zone', dataIndex: 'zone', key: 'zone' },
-            { title: 'SAT (Actual)', key: 'sat', render: (_, r: AHU) =>
-              <span style={{ color: Math.abs(r.sat - r.satSP) > 2 ? '#cf1322' : undefined }}>
-                {r.sat.toFixed(1)}°C
-              </span> },
-            { title: 'SAT SP', key: 'satsp', render: (_, r: AHU) =>
-              <Tag color="blue" style={{ fontSize: 11 }}>{r.satSP.toFixed(1)}°C</Tag> },
-            { title: 'Fan %', key: 'fan', render: (_, r: AHU) => `${r.fanSpeed.toFixed(0)}%` },
-            { title: 'CHW Valve', key: 'chw', render: (_, r: AHU) => `${r.chwValve.toFixed(0)}%` },
-            { title: 'Zone °C', key: 'zone', render: (_, r: AHU) => `${r.zoneTemp.toFixed(1)}°C` },
-            { title: 'CO₂', key: 'co2', render: (_, r: AHU) =>
-              <span style={{ color: r.co2 > 1000 ? '#cf1322' : r.co2 > 800 ? '#d48806' : undefined }}>
-                {r.co2.toFixed(0)} ppm
-              </span> },
-            { title: 'Filter DP', key: 'dp', render: (_, r: AHU) =>
-              <span style={{ color: r.filterDP > 200 ? '#d48806' : undefined }}>
-                {r.filterDP.toFixed(0)} Pa
-              </span> },
-            { title: 'HVLS', key: 'hvls', render: (_, r: AHU) =>
-              <Tag color={r.hlvsOn ? 'success' : 'default'}>{r.hlvsOn ? 'On' : 'Off'}</Tag> },
-            { title: 'Health', key: 'h', render: (_, r: AHU) => healthBadge(r.health) },
+            { title: 'AHU', dataIndex: 'name', key: 'name', fixed: 'left', width: 100, render: (v) => <strong>{v}</strong> },
+            { title: 'Zone', dataIndex: 'zone', key: 'zone', width: 160 },
+            { title: 'Type', key: 'type', width: 120, render: (_, r: AHU) => typeTag(r.type) },
+            { title: 'SAT', key: 'sat', width: 130, render: (_, r: AHU) =>
+              <RangeBar label="" value={r.sat} min={11} max={19} zones={SAT_ZONES} target={r.satSP} precision={1} bare barWidth={60} /> },
+            { title: 'Zone Temp', key: 'zt', width: 130, render: (_, r: AHU) =>
+              <RangeBar label="" value={r.zoneTemp} min={21} max={30} zones={ZONE_TEMP_ZONES} target={r.zoneTempSP} precision={1} bare barWidth={60} /> },
+            { title: 'CO₂', key: 'co2', width: 150, render: (_, r: AHU) => r.type === 'control-station'
+              ? <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{r.co2.toFixed(0)}</span><Sparkline data={windowHistory(r.co2History, 1)} color="#faad14" width={70} height={24} />
+                </div>
+              : <Text type="secondary" style={{ fontSize: 11 }}>N/A</Text> },
+            { title: 'Filter DP', key: 'fdp', width: 130, render: (_, r: AHU) =>
+              <RangeBar label="" value={r.filterDP} unit=" Pa" min={70} max={240} zones={FILTER_DP_ZONES} precision={0} bare barWidth={60} /> },
+            { title: 'Health', key: 'h', width: 100, render: (_, r: AHU) => healthTag(r.health) },
           ]}
         />
       </Card>
     </div>
   )
 
-  // ── CO2 Tab ───────────────────────────────────────────────────────────────
+  // ── Ventilation & IAQ tab ────────────────────────────────────────────────────
+  const ventTab = (
+    <div>
+      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          CO₂-driven fresh air control applies to Control Station units only (§4.2) — Electrical Rooms have no
+          occupancy-driven ventilation and are excluded below. HVLS station fans are switched ON/OFF by the AI only;
+          their run speed is fixed at commissioning (§4.3).
+        </Text>
+      </Card>
+      <Card title="Fresh Air & HVLS — Control Station Units" size="small">
+        <Table
+          dataSource={csUnits}
+          rowKey="id"
+          pagination={false}
+          size="small"
+          scroll={{ x: 900 }}
+          columns={[
+            { title: 'AHU', dataIndex: 'name', key: 'name', fixed: 'left', width: 100, render: (v) => <strong>{v}</strong> },
+            { title: 'CO₂', key: 'co2', width: 150, render: (_, r: AHU) =>
+              <RangeBar label="" value={r.co2} unit=" ppm" min={350} max={1150} zones={CO2_ZONES} precision={0} bare barWidth={70} /> },
+            { title: 'Fresh Air Fan (actual/SP)', key: 'fa', width: 150, render: (_, r: AHU) =>
+              <Progress percent={Math.round(r.freshAirSpeed)} success={{ percent: Math.round(r.freshAirSpeedSP) }} size="small" strokeColor="#1677ff" style={{ width: 110 }} /> },
+            { title: 'Fresh Air Fan kW', key: 'fakw', width: 130, render: (_, r: AHU) => r.freshAirFanKW.toFixed(1) },
+            { title: 'Fresh Air Run', key: 'farun', width: 110, render: (_, r: AHU) => <Tag color={r.freshAirFanRun ? 'success' : 'default'}>{r.freshAirFanRun ? 'ON' : 'OFF'}</Tag> },
+            { title: 'HVLS Status', key: 'hvls', width: 110, render: (_, r: AHU) => <Tag color={r.hvlsOn ? 'success' : 'default'}>{r.hvlsOn ? 'ON' : 'OFF'}</Tag> },
+            { title: 'HVLS Fixed Speed', key: 'hvlsspeed', width: 130, render: (_, r: AHU) => r.hvlsOn ? `${r.hvlsFixedSpeed}%` : '—' },
+            { title: 'Zone Temp Strategy', key: 'strat', width: 160, render: (_, r: AHU) => r.hvlsOn ? <Tag color="blue">Fan ON → 27°C</Tag> : <Tag color="purple">Fan OFF → 25°C</Tag> },
+          ]}
+        />
+      </Card>
+    </div>
+  )
+
+  // ── Trends tab ─────────────────────────────────────────────────────────────
+  const labels = timeLabels(days)
+  const interval = labelInterval(days)
+
   const co2Opt = {
     tooltip: { trigger: 'axis' as const },
-    legend: { data: ahus.map(a => a.name), bottom: 0 },
-    grid: { bottom: 50 },
-    xAxis: { type: 'category' as const, data: TIMES, axisLabel: { interval: 47 } },
-    yAxis: { type: 'value' as const, name: 'CO₂ (ppm)', min: 350,
-      markLine: { data: [{ yAxis: 1000, name: '1000 ppm', lineStyle: { color: '#cf1322', type: 'dashed' } }] },
-    },
-    series: ahus.map((a, i) => ({
+    legend: { data: csUnits.map(a => a.name), bottom: 0 },
+    grid: { bottom: 50, left: 55, right: 20, top: 40, containLabel: true },
+    xAxis: { type: 'category' as const, data: labels, axisLabel: { interval } },
+    yAxis: { type: 'value' as const, name: 'ppm' },
+    series: csUnits.map((a, i) => ({
       name: a.name, type: 'line' as const, smooth: true,
-      data: a.co2History, lineStyle: { color: COLORS[i] }, itemStyle: { color: COLORS[i] },
+      data: windowHistory(a.co2History, days), lineStyle: { color: LINE_COLORS[i % LINE_COLORS.length] }, itemStyle: { color: LINE_COLORS[i % LINE_COLORS.length] },
       showSymbol: false,
+      ...(i === 0 ? { markLine: dayMarkLine(days, store.darkMode) } : {}),
     })),
   }
 
   const freshAirOpt = {
     tooltip: { trigger: 'axis' as const },
-    legend: { data: ahus.map(a => a.name), bottom: 0 },
-    grid: { bottom: 50 },
-    xAxis: { type: 'category' as const, data: TIMES, axisLabel: { interval: 47 } },
-    yAxis: { type: 'value' as const, name: 'Fresh Air Fan %', min: 0, max: 110 },
-    series: ahus.map((a, i) => ({
+    legend: { data: csUnits.map(a => a.name), bottom: 0 },
+    grid: { bottom: 50, left: 55, right: 20, top: 40, containLabel: true },
+    xAxis: { type: 'category' as const, data: labels, axisLabel: { interval } },
+    yAxis: { type: 'value' as const, name: '%' },
+    series: csUnits.map((a, i) => ({
       name: a.name, type: 'line' as const, smooth: true,
-      data: a.freshAirHistory, lineStyle: { color: COLORS[i] }, itemStyle: { color: COLORS[i] },
+      data: windowHistory(a.freshAirHistory, days), lineStyle: { color: LINE_COLORS[i % LINE_COLORS.length] }, itemStyle: { color: LINE_COLORS[i % LINE_COLORS.length] },
       showSymbol: false,
+      ...(i === 0 ? { markLine: dayMarkLine(days, store.darkMode) } : {}),
     })),
   }
 
-  const co2Tab = (
-    <div>
-      <Card title="CO₂ ppm — All AHUs (24h)" style={{ marginBottom: 16 }}>
-        <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-          Fresh air damper ramps up as CO₂ rises. 1000 ppm threshold shown in red.
-        </Paragraph>
-        <ReactECharts option={co2Opt} style={{ height: 300 }} />
-      </Card>
-      <Card title="Fresh Air Fan Speed % — All AHUs (24h)">
-        <ReactECharts option={freshAirOpt} style={{ height: 280 }} />
-      </Card>
-    </div>
-  )
+  const fanKwOpt = {
+    tooltip: { trigger: 'axis' as const },
+    legend: { data: ahus.map(a => a.name), bottom: 0, type: 'scroll' as const },
+    grid: { bottom: 60, left: 55, right: 20, top: 40, containLabel: true },
+    xAxis: { type: 'category' as const, data: labels, axisLabel: { interval } },
+    yAxis: { type: 'value' as const, name: 'kW' },
+    series: ahus.map((a, i) => ({
+      name: a.name, type: 'line' as const, smooth: true,
+      data: windowHistory(a.fanKwHistory, days), lineStyle: { color: LINE_COLORS[i % LINE_COLORS.length] }, itemStyle: { color: LINE_COLORS[i % LINE_COLORS.length] },
+      showSymbol: false,
+      ...(i === 0 ? { markLine: dayMarkLine(days, store.darkMode) } : {}),
+    })),
+  }
 
-  // ── AI Setpoints Tab ──────────────────────────────────────────────────────
-  const setpointsTab = (
+  const trendsTab = (
     <div>
-      <Paragraph type="secondary" style={{ marginBottom: 20 }}>
-        SAT setpoint is adjusted to balance cooling load vs zone comfort.
-        Fan setpoint tracks CO₂ to minimise fresh air energy while maintaining IAQ.
-        Setpoints shown in <Tag color="blue">blue</Tag>.
-      </Paragraph>
-      <Row gutter={[12, 12]}>
-        {ahus.map(a => (
-          <Col key={a.id} xs={24} sm={12} md={8}>
-            <Card size="small" title={<span style={{ fontSize: 13 }}>{a.name}</span>}
-              extra={<span style={{ fontSize: 11, color: '#888' }}>{a.zone}</span>}
-              style={{ background: '#fafafa' }}>
-              <Row gutter={[8, 8]}>
-                <Col span={12}>
-                  <div style={{ padding: '8px 10px', background: '#e6f4ff', border: '1px solid #91caff', borderRadius: 6, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#1677ff' }}>SAT SP (AI)</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#1677ff' }}>{a.satSP.toFixed(1)}°C</div>
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <div style={{ padding: '8px 10px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#888' }}>SAT Actual</div>
-                    <div style={{ fontSize: 18, fontWeight: 700,
-                      color: Math.abs(a.sat - a.satSP) > 2 ? '#cf1322' : undefined }}>
-                      {a.sat.toFixed(1)}°C
-                    </div>
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <div style={{ padding: '8px 10px', background: '#e6f4ff', border: '1px solid #91caff', borderRadius: 6, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#1677ff' }}>Fan SP (AI)</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#1677ff' }}>{a.fanSP.toFixed(0)}%</div>
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <div style={{ padding: '8px 10px', background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#888' }}>Fan Actual</div>
-                    <div style={{ fontSize: 18, fontWeight: 700 }}>{a.fanSpeed.toFixed(0)}%</div>
-                  </div>
-                </Col>
-              </Row>
-              <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
-                CO₂: <strong style={{ color: a.co2 > 1000 ? '#cf1322' : a.co2 > 800 ? '#d48806' : '#389e0d' }}>
-                  {a.co2.toFixed(0)} ppm
-                </strong> &nbsp;|&nbsp; Zone: <strong>{a.zoneTemp.toFixed(1)}°C</strong>
-              </div>
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <TimelineSwitch value={days} onChange={setDays} />
+      </div>
+      <Card title="CO₂ History (Control Station)" style={{ marginBottom: 16 }}>
+        <ReactECharts option={co2Opt} theme={chartTheme} style={{ height: 280 }} />
+      </Card>
+      <Card title="Fresh Air Fan Speed History" style={{ marginBottom: 16 }}>
+        <ReactECharts option={freshAirOpt} theme={chartTheme} style={{ height: 280 }} />
+      </Card>
+      <Card title="EC Fan Power History (All Units)">
+        <ReactECharts option={fanKwOpt} theme={chartTheme} style={{ height: 300 }} />
+      </Card>
     </div>
   )
 
@@ -194,15 +280,15 @@ const AHUPage: React.FC = observer(() => {
     <div style={{ padding: '24px 28px' }}>
       <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Air Handling Units</Title>
       <Paragraph type="secondary" style={{ marginBottom: 20 }}>
-        6 AHUs across T1 / T2 / T3 / T5. AI-controlled supply air temp and ventilation rates.
+        10 AHUs — T1, T2, T3 &amp; T5 (8 Control Station + 2 Electrical Room per FDS Table 9). AI setpoints refresh every 5 min.
       </Paragraph>
       <Tabs
         defaultActiveKey="overview"
         items={[
-          { key: 'overview',   label: 'Overview',              children: overviewTab },
-          { key: 'co2',        label: 'CO₂ & Ventilation',     children: co2Tab },
-          { key: 'setpoints',  label: 'AI Setpoints',          children: setpointsTab },
-          { key: 'alarms',     label: `Alarms (${allFindings.length})`, children: <FDDPanel findings={allFindings} systemLabel="AHUs" /> },
+          { key: 'overview', label: 'Overview', children: overviewTab },
+          { key: 'vent', label: 'Ventilation & IAQ', children: ventTab },
+          { key: 'trends', label: 'Trends', children: trendsTab },
+          { key: 'alarms', label: `Alarms (${allFindings.length})`, children: <FDDPanel findings={allFindings} systemLabel="AHUs" /> },
         ]}
       />
     </div>

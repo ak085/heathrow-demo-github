@@ -1,5 +1,6 @@
 import { makeAutoObservable } from 'mobx'
 import type { Finding } from '../types/fdd'
+import type { ChillerStore } from './ChillerStore'
 
 function gaussian(mean: number, std: number): number {
   return mean + std * Math.sqrt(-2 * Math.log(Math.random() + 1e-10)) * Math.cos(2 * Math.PI * Math.random())
@@ -9,11 +10,12 @@ export class SavingsStore {
   baselineDailyKwh = 18000
   actualDailyKwh   = Math.max(14000, Math.min(17000, gaussian(15300, 400)))
   copBaseline      = 3.8
-  copActual        = Math.max(4.4, Math.min(5.2, gaussian(4.7, 0.2)))
   weeklyBarData: { day: string; baseline: number; actual: number }[] = []
   fddSummary = { open: 0, resolvedThisWeek: 5, criticalOpen: 0 }
+  private chiller: ChillerStore
 
-  constructor() {
+  constructor(chiller: ChillerStore) {
+    this.chiller = chiller
     makeAutoObservable(this)
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     this.weeklyBarData = days.map(day => {
@@ -24,6 +26,8 @@ export class SavingsStore {
     setInterval(() => this.tick(), 5000)
   }
 
+  /** Real live plant COP, not an independently-randomised figure. */
+  get copActual()        { return this.chiller.avgCOP }
   get savingsPct()        { return ((this.baselineDailyKwh - this.actualDailyKwh) / this.baselineDailyKwh) * 100 }
   get savingsKwhToday()   { return this.baselineDailyKwh - this.actualDailyKwh }
   get savingsGbpToday()   { return this.savingsKwhToday * 0.25 }
@@ -38,6 +42,5 @@ export class SavingsStore {
 
   private tick() {
     this.actualDailyKwh = Math.max(14000, Math.min(17000, gaussian(15300, 200)))
-    this.copActual      = Math.max(4.4,   Math.min(5.2,   gaussian(4.7, 0.1)))
   }
 }

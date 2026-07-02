@@ -13,6 +13,7 @@ import {
   MoonOutlined,
   TeamOutlined,
   LogoutOutlined,
+  AlertOutlined,
 } from '@ant-design/icons'
 import { useStore } from './stores'
 import { overallHealth } from './types/fdd'
@@ -24,6 +25,7 @@ import AHUPage       from './pages/AHUPage'
 import PowerGridPage from './pages/PowerGridPage'
 import SolarPage     from './pages/SolarPage'
 import SavingsPage   from './pages/SavingsPage'
+import AlarmsPage    from './pages/AlarmsPage'
 import LoginPage     from './pages/LoginPage'
 import UsersPage     from './pages/UsersPage'
 
@@ -108,6 +110,7 @@ const AppShell = observer(() => {
 
   const items: MenuItem[] = [
     { key: '/', icon: <AppstoreOutlined />, label: 'Dashboard' },
+    { key: '/alarms', icon: <AlertOutlined />, label: navLabel('Alarms', overallHealth(allF)), title: 'Alarms' },
     { type: 'divider' as const },
     {
       key: 'systems-group', type: 'group' as const,
@@ -269,6 +272,7 @@ const AppShell = observer(() => {
             <Route path="/power"   element={<PowerGridPage />} />
             <Route path="/solar"   element={<SolarPage />} />
             <Route path="/savings" element={<SavingsPage />} />
+            <Route path="/alarms"  element={<AlarmsPage />} />
             {user.role === 'admin' && (
               <Route path="/users" element={<UsersPage />} />
             )}

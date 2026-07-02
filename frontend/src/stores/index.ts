@@ -7,11 +7,11 @@ import { SolarStore } from './SolarStore'
 import { SavingsStore } from './SavingsStore'
 
 export class RootStore {
-  chiller  = new ChillerStore()
   ahu      = new AHUStore()
-  power    = new PowerGridStore()
-  solar    = new SolarStore()
-  savings  = new SavingsStore()
+  chiller  = new ChillerStore(this.ahu)
+  power    = new PowerGridStore(this.chiller, this.ahu)
+  solar    = new SolarStore(this.power)
+  savings  = new SavingsStore(this.chiller)
   darkMode = false
 
   constructor() { makeAutoObservable(this) }

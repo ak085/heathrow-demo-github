@@ -1,24 +1,32 @@
 import React, { useEffect } from 'react'
 import { observer } from 'mobx-react-lite'
-import { Tabs, Card, Row, Col, Statistic, Table, Tag, Typography } from 'antd'
+import { useNavigate } from 'react-router-dom'
+import { Tabs, Card, Row, Col, Statistic, Button, Typography } from 'antd'
 import ReactECharts from 'echarts-for-react'
 import { useStore } from '../stores'
-import { FDDPanel } from '../components/FDDPanel'
+import { Gauge } from '../components/Gauge'
+import { RangeBar, buildZones } from '../components/RangeBar'
+import { useEchartsTheme } from '../theme/echartsTheme'
 import type { Finding } from '../types/fdd'
 
 const { Title, Paragraph } = Typography
 const PURPLE  = '#5a0057'
 const BASELINE_COLOR = '#aaa'
 const ACTUAL_COLOR   = '#52c41a'
+const COP_ZONES = buildZones({ min: 3, max: 6.2, critLow: 3.5, warnLow: 4.0 })
+const SAVINGS_PCT_ZONES = buildZones({ min: 0, max: 30, warnLow: 8, critLow: 3 })
 
 const SavingsPage: React.FC = observer(() => {
-  const { savings, chiller, ahu, power } = useStore()
+  const { savings, chiller, ahu, power, solar } = useStore()
+  const navigate = useNavigate()
+  const chartTheme = useEchartsTheme()
 
   // Aggregate FDD findings across all systems
   const allFindings: Finding[] = [
     ...chiller.allFindings,
     ...ahu.allFindings,
     ...power.allFindings,
+    ...solar.allFindings,
   ]
   const openCount    = allFindings.length
   const critCount    = allFindings.filter(f => f.severity === 'critical').length
@@ -106,12 +114,12 @@ const SavingsPage: React.FC = observer(() => {
         </Col>
       </Row>
 
-      {/* COP improvement */}
+      {/* COP improvement + savings rate */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12}>
           <Card title="COP Improvement">
-            <Row gutter={[16, 0]}>
-              <Col span={12}>
+            <Row gutter={[16, 0]} align="middle">
+              <Col span={10}>
                 <Card size="small" style={{ textAlign: 'center', background: '#f5f5f5' }}>
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Before AI</div>
                   <div style={{ fontSize: 28, fontWeight: 700, color: '#888' }}>
@@ -120,23 +128,19 @@ const SavingsPage: React.FC = observer(() => {
                   <div style={{ fontSize: 11, color: '#aaa' }}>COP baseline</div>
                 </Card>
               </Col>
-              <Col span={12}>
-                <Card size="small" style={{ textAlign: 'center', background: '#f6ffed', border: '1px solid #b7eb8f' }}>
-                  <div style={{ fontSize: 11, color: '#389e0d', marginBottom: 4 }}>With AI</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: '#389e0d' }}>
-                    {copActual.toFixed(2)}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#389e0d' }}>
-                    +{copImprovement.toFixed(1)}% improvement
-                  </div>
-                </Card>
+              <Col span={14}>
+                <Gauge label="Live Plant COP" value={copActual} min={3} max={6.2} zones={COP_ZONES} height={150} />
+                <div style={{ textAlign: 'center', fontSize: 12, color: '#389e0d', fontWeight: 600 }}>
+                  +{copImprovement.toFixed(1)}% vs baseline
+                </div>
               </Col>
             </Row>
           </Card>
         </Col>
         <Col xs={24} sm={12}>
           <Card title="7-Day Energy — Baseline vs Actual" style={{ height: '100%' }}>
-            <ReactECharts option={weeklyOpt} style={{ height: 200 }} />
+            <ReactECharts option={weeklyOpt} theme={chartTheme} style={{ height: 150 }} />
+            <RangeBar label="Today's Saving Rate" value={savingsPct} unit="%" min={0} max={30} zones={SAVINGS_PCT_ZONES} precision={1} compact />
           </Card>
         </Col>
       </Row>
@@ -174,47 +178,15 @@ const SavingsPage: React.FC = observer(() => {
         </Col>
       </Row>
 
-      {/* All findings across systems */}
-      <Card title="All Active Findings — Cross-System">
-        {allFindings.length === 0 ? (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            background: '#f6ffed', border: '1px solid #b7eb8f',
-            borderRadius: 6, padding: '10px 14px',
-          }}>
-            <span style={{ color: '#52c41a', fontSize: 16 }}>✓</span>
-            <span style={{ fontWeight: 600, color: '#389e0d' }}>All Clear — No active faults across all systems</span>
-          </div>
-        ) : (
-          <div>
-            <div style={{ marginBottom: 12 }}>
-              {critCount > 0 && <Tag color="error">{critCount} Critical</Tag>}
-              {warnCount > 0 && <Tag color="warning">{warnCount} Warning{warnCount > 1 ? 's' : ''}</Tag>}
-            </div>
-            <Table
-              dataSource={allFindings}
-              rowKey={r => `${r.ruleId}-${r.unit}`}
-              pagination={false}
-              size="small"
-              columns={[
-                { title: 'System', key: 'sys', render: (_, r) =>
-                  r.ruleId.startsWith('CHI') ? <Tag color="purple">Chiller</Tag>
-                : r.ruleId.startsWith('AHU') ? <Tag color="blue">AHU</Tag>
-                :                               <Tag color="volcano">Power</Tag> },
-                { title: 'Severity', dataIndex: 'severity', key: 'sev', render: v =>
-                  <Tag color={v === 'critical' ? 'error' : 'warning'}>{v.toUpperCase()}</Tag> },
-                { title: 'Unit', dataIndex: 'unit', key: 'unit' },
-                { title: 'Finding', dataIndex: 'title', key: 'title', render: v => <strong>{v}</strong> },
-                { title: 'Trigger', dataIndex: 'triggerValue', key: 'tv' },
-              ]}
-            />
-          </div>
-        )}
+      <Card style={{ textAlign: 'center' }}>
+        <Paragraph style={{ marginBottom: 16 }}>
+          Full findings detail, per-system filtering and notify-channel routing now live on the dedicated
+          <strong> Alarms</strong> page, so it isn't duplicated here.
+        </Paragraph>
+        <Button type="primary" style={{ background: PURPLE, borderColor: PURPLE }} onClick={() => navigate('/alarms')}>
+          Go to Alarms
+        </Button>
       </Card>
-
-      <div style={{ marginTop: 20 }}>
-        <FDDPanel findings={allFindings} systemLabel="all systems" />
-      </div>
     </div>
   )
 
