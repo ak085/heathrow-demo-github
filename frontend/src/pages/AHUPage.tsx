@@ -276,6 +276,66 @@ const AHUPage: React.FC = observer(() => {
     </div>
   )
 
+  // ── System Schematic Tab — live airflow process diagram ────────────────────
+  // A single representative flow (fleet-average values) for the more complex control-station
+  // type (8 of 10 units) — electrical-room units skip the fresh-air/CO2 stages, noted below.
+  const avgFilterDP = ahus.reduce((s, a) => s + a.filterDP, 0) / ahus.length
+  const avgChwValve = ahus.reduce((s, a) => s + a.chwValve, 0) / ahus.length
+  const avgFanSpeed = ahus.reduce((s, a) => s + a.fanSpeed, 0) / ahus.length
+  const avgFreshAirSpeedCS = csUnits.reduce((s, a) => s + a.freshAirSpeed, 0) / csUnits.length
+
+  const OA_COLOR = '#1677ff'
+  const FILTER_COLOR = '#faad14'
+  const COIL_COLOR = '#7c3aed'
+  const FAN_COLOR = PURPLE
+  const ZONE_COLOR_SCHEMATIC = '#52c41a'
+
+  const ahuSchematicNodes = [
+    { name: 'Outside Air Intake', x: 130, y: 150, symbol: 'roundRect', symbolSize: [230, 90],
+      itemStyle: { color: OA_COLOR }, label: { formatter: `Outside Air Intake\nDamper ${avgFreshAirSpeedCS.toFixed(0)}%  |  Fans ${freshAirKwSum.toFixed(0)} kW\n(control-station units)` } },
+    { name: 'Filter', x: 400, y: 150, symbol: 'roundRect', symbolSize: [180, 90],
+      itemStyle: { color: FILTER_COLOR }, label: { formatter: `Filter\nAvg DP ${avgFilterDP.toFixed(0)} Pa\n${filterAlerts} unit(s) elevated` } },
+    { name: 'Cooling Coil (CHW)', x: 650, y: 150, symbol: 'roundRect', symbolSize: [220, 90],
+      itemStyle: { color: COIL_COLOR }, label: { formatter: `Cooling Coil (CHW)\nValve ${avgChwValve.toFixed(0)}% open\nFed from Chiller Plant CHW header` } },
+    { name: 'Supply Fan', x: 900, y: 150, symbol: 'roundRect', symbolSize: [200, 90],
+      itemStyle: { color: FAN_COLOR }, label: { formatter: `Supply Fan (EC)\n${avgFanSpeed.toFixed(0)}% speed\n${fanKwSum.toFixed(0)} kW total` } },
+    { name: 'Discharge → Zone', x: 1150, y: 150, symbol: 'roundRect', symbolSize: [240, 90],
+      itemStyle: { color: ZONE_COLOR_SCHEMATIC }, label: { formatter: `Discharge → Zone\nSAT ${avgSAT.toFixed(1)}°C  |  Zone ${avgZoneT.toFixed(1)}°C\nCO₂ ${avgCO2.toFixed(0)} ppm (CS units)` } },
+  ]
+  const ahuSchematicLinks = [
+    { source: 'Outside Air Intake', target: 'Filter', lineStyle: { color: '#999', width: 2 } },
+    { source: 'Filter', target: 'Cooling Coil (CHW)', lineStyle: { color: '#999', width: 2 } },
+    { source: 'Cooling Coil (CHW)', target: 'Supply Fan', lineStyle: { color: '#999', width: 2 } },
+    { source: 'Supply Fan', target: 'Discharge → Zone', lineStyle: { color: '#999', width: 2 } },
+  ]
+  const ahuSchematicOpt = {
+    tooltip: { show: false },
+    series: [{
+      type: 'graph' as const, layout: 'none' as const,
+      symbol: 'roundRect', roam: false,
+      label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600, lineHeight: 16 },
+      edgeSymbol: ['none', 'arrow'], edgeSymbolSize: [0, 8],
+      lineStyle: { color: '#999', width: 2, curveness: 0 },
+      data: ahuSchematicNodes,
+      links: ahuSchematicLinks,
+    }],
+  }
+
+  const schematicTab = (
+    <div>
+      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Live airflow schematic for a typical control-station AHU (8 of 10 units) — outside air → filter →
+          cooling coil → supply fan → zone. Values are fleet averages across all 10 units unless noted; the 2
+          electrical-room units skip the fresh-air/CO₂ stages and run to a fixed 27°C zone setpoint instead.
+        </Text>
+      </Card>
+      <Card title="AHUs — System Schematic">
+        <ReactECharts option={ahuSchematicOpt} theme={chartTheme} style={{ height: 340 }} />
+      </Card>
+    </div>
+  )
+
   return (
     <div style={{ padding: '24px 28px' }}>
       <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Air Handling Units</Title>
@@ -286,6 +346,7 @@ const AHUPage: React.FC = observer(() => {
         defaultActiveKey="overview"
         items={[
           { key: 'overview', label: 'Overview', children: overviewTab },
+          { key: 'schematic', label: 'System Schematic', children: schematicTab },
           { key: 'vent', label: 'Ventilation & IAQ', children: ventTab },
           { key: 'trends', label: 'Trends', children: trendsTab },
           { key: 'alarms', label: `Alarms (${allFindings.length})`, children: <FDDPanel findings={allFindings} systemLabel="AHUs" /> },

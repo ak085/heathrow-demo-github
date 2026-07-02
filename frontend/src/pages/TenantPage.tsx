@@ -124,10 +124,14 @@ const TenantPage: React.FC = observer(() => {
           columns={[
             { title: 'Tenant', dataIndex: 'name', key: 'name', fixed: 'left', width: 190, render: (v) => <strong>{v}</strong> },
             { title: 'Zone', dataIndex: 'zone', key: 'zone', width: 150 },
-            { title: 'Category', key: 'cat', width: 100, render: (_, m: TenantMeter) =>
-              <Tag color={CATEGORY_COLOR[m.category]}>{m.category}</Tag> },
-            { title: 'Metering', key: 'mt', width: 110, render: (_, m: TenantMeter) =>
-              <Tag color={METER_TYPE_COLOR[m.meteringType]}>{m.meteringType}</Tag> },
+            { title: 'Category', key: 'cat', width: 100,
+              filters: (Object.keys(CATEGORY_COLOR) as TenantCategory[]).map(c => ({ text: c, value: c })),
+              onFilter: (value, m: TenantMeter) => m.category === value,
+              render: (_, m: TenantMeter) => <Tag color={CATEGORY_COLOR[m.category]}>{m.category}</Tag> },
+            { title: 'Metering', key: 'mt', width: 110,
+              filters: (Object.keys(METER_TYPE_COLOR) as MeteringType[]).map(t => ({ text: t, value: t })),
+              onFilter: (value, m: TenantMeter) => m.meteringType === value,
+              render: (_, m: TenantMeter) => <Tag color={METER_TYPE_COLOR[m.meteringType]}>{m.meteringType}</Tag> },
             { title: 'Consumption', key: 'kwh', width: 170, render: (_, m: TenantMeter) =>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>{m.consumptionKwh.toFixed(0)} kWh/mo</span><Sparkline data={m.history} color={PURPLE} width={60} height={22} />
@@ -138,7 +142,10 @@ const TenantPage: React.FC = observer(() => {
               m.meteringType === 'manual'
                 ? <RangeBar label="" value={m.daysSinceReading} min={0} max={120} zones={DAYS_ZONES} precision={0} bare barWidth={70} />
                 : <Text type="secondary" style={{ fontSize: 11 }}>{m.meteringType === 'automated' ? 'Live' : 'N/A (deemed)'}</Text> },
-            { title: 'Health', key: 'h', width: 100, render: (_, m: TenantMeter) => healthTag(m.health) },
+            { title: 'Health', key: 'h', width: 100,
+              filters: [{ text: 'Normal', value: 'ok' }, { text: 'Warning', value: 'warning' }, { text: 'Critical', value: 'critical' }],
+              onFilter: (value, m: TenantMeter) => m.health === value,
+              render: (_, m: TenantMeter) => healthTag(m.health) },
           ]}
         />
       </Card>

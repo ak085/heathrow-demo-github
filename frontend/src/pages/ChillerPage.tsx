@@ -19,7 +19,7 @@ const LINE_COLORS = ['#5a0057', '#9b59b6', '#e74c3c', '#1677ff', '#13a8a8']
 const CHW_ST_ZONES   = buildZones({ min: 5, max: 10, critLow: 5.5, warnLow: 6.5, warnHigh: 8.5, critHigh: 9.5 })
 const CW_ST_ZONES    = buildZones({ min: 26, max: 36, critLow: 27, warnLow: 28, warnHigh: 32, critHigh: 34 })
 const COP_ZONES      = buildZones({ min: 3, max: 6.2, critLow: 3.5, warnLow: 4.0 })
-const KW_PER_RT_ZONES = buildZones({ min: 0.4, max: 1.1, warnHigh: 0.75, critHigh: 0.9 })
+const KW_PER_RT_ZONES = buildZones({ min: 0.5, max: 1.0, warnHigh: 0.80, critHigh: 0.90 })
 const FLOW_RATIO_ZONES = buildZones({ min: 1.5, max: 4.0, warnLow: 2.0, warnHigh: 3.5 })
 const APPROACH_ZONES = buildZones({ min: 0, max: 12, warnHigh: 7, critHigh: 8.5 })
 
@@ -44,10 +44,11 @@ function normCOP(cop: number) {
 
 const ChillerPage: React.FC = observer(() => {
   const store = useStore()
-  const { chiller } = store
+  const { chiller, ahu } = store
   const {
     chillers, chillerPlantKw, avgCOP, avgCHWST, avgCWST, airsideKw, mechFanKw, allFindings,
     totalCoolingCapRT, avgKwPerRT, plantAuxKw, wetBulb, flowConsistencyErrorPct,
+    headerChwFlow, headerCwFlow,
   } = chiller
   const chartTheme = useEchartsTheme()
   const [days, setDays] = useState<TimelineDays>(1)
@@ -230,7 +231,7 @@ const ChillerPage: React.FC = observer(() => {
             { title: 'COP', key: 'cop', width: 130, render: (_, r: Chiller) =>
               <RangeBar label="" value={r.cop} min={3} max={6.2} zones={COP_ZONES} precision={2} bare barWidth={60} /> },
             { title: 'kW/RT', key: 'kwrt', width: 130, render: (_, r: Chiller) =>
-              <RangeBar label="" value={r.kwPerRT} min={0.4} max={1.1} zones={KW_PER_RT_ZONES} precision={2} bare barWidth={60} /> },
+              <RangeBar label="" value={r.kwPerRT} min={0.5} max={1.0} zones={KW_PER_RT_ZONES} precision={2} bare barWidth={60} /> },
             { title: 'Load %', key: 'load', width: 110, render: (_, r: Chiller) =>
               <Progress percent={Math.round(r.load)} size="small" strokeColor={PURPLE} style={{ width: 90 }} /> },
             { title: 'CHW ΔT', key: 'chwdt', width: 80, render: (_, r: Chiller) => `${(r.chwRT - r.chwST).toFixed(1)}°C` },
@@ -343,6 +344,69 @@ const ChillerPage: React.FC = observer(() => {
     </div>
   )
 
+  // ── System Schematic Tab — live P&ID-style flow diagram ────────────────────
+  const CT_COLOR = '#0891b2'
+  const CHW_COLOR = '#7c3aed'
+  const AHU_COLOR = '#1677ff'
+  const totalCtFanKw = chillers.reduce((s, c) => s + c.ctFanKW, 0)
+  const totalCwPumpKw = chillers.reduce((s, c) => s + c.cwPumpKW, 0)
+  const totalChwPumpKw = chillers.reduce((s, c) => s + c.chwPumpKW, 0)
+  const avgApproach = chillers.reduce((s, c) => s + c.approach, 0) / chillers.length
+  const avgChwRT = chillers.reduce((s, c) => s + c.chwRT, 0) / chillers.length
+
+  const schematicNodes = [
+    { name: 'Cooling Towers', x: 500, y: 40, symbol: 'roundRect', symbolSize: [240, 60],
+      itemStyle: { color: CT_COLOR }, label: { formatter: `Cooling Towers\nApproach ${avgApproach.toFixed(1)}°C  |  Fans ${totalCtFanKw.toFixed(0)} kW` } },
+    { name: 'CW Pumps', x: 500, y: 150, symbol: 'roundRect', symbolSize: [200, 50],
+      itemStyle: { color: CT_COLOR }, label: { formatter: `CW Pumps\n${totalCwPumpKw.toFixed(0)} kW  |  ${headerCwFlow.toFixed(0)} L/s` } },
+    ...chillers.map((c, i) => ({
+      name: c.id, x: 90 + i * 205, y: 280, symbol: 'roundRect', symbolSize: [175, 75],
+      itemStyle: { color: PURPLE },
+      label: { formatter: `${c.name}\n${c.kw.toFixed(0)} kW  |  COP ${c.cop.toFixed(2)}\n${c.location}` },
+    })),
+    { name: 'CHW Pumps', x: 500, y: 440, symbol: 'roundRect', symbolSize: [200, 50],
+      itemStyle: { color: CHW_COLOR }, label: { formatter: `CHW Pumps\n${totalChwPumpKw.toFixed(0)} kW  |  ${headerChwFlow.toFixed(0)} L/s` } },
+    { name: 'CHW Header', x: 500, y: 590, symbol: 'roundRect', symbolSize: [260, 60],
+      itemStyle: { color: CHW_COLOR }, label: { formatter: `CHW Header\n${avgCHWST.toFixed(1)}°C supply → ${avgChwRT.toFixed(1)}°C return` } },
+    { name: 'AHU Coils', x: 500, y: 740, symbol: 'roundRect', symbolSize: [280, 60],
+      itemStyle: { color: AHU_COLOR }, label: { formatter: `AHU Coils (×${ahu.ahus.length})\n${ahu.totalFanKw.toFixed(0)} kW fans  |  Avg SAT ${ahu.avgSAT.toFixed(1)}°C` } },
+  ]
+  const schematicLinks = [
+    { source: 'Cooling Towers', target: 'CW Pumps', lineStyle: { color: '#999', width: 2 } },
+    ...chillers.map(c => ({ source: 'CW Pumps', target: c.id, lineStyle: { color: '#999', width: 2 } })),
+    ...chillers.map(c => ({ source: c.id, target: 'CHW Pumps', lineStyle: { color: '#999', width: 2 } })),
+    { source: 'CHW Pumps', target: 'CHW Header', lineStyle: { color: '#999', width: 2 } },
+    { source: 'CHW Header', target: 'AHU Coils', lineStyle: { color: '#999', width: 2 } },
+  ]
+  const schematicOpt = {
+    tooltip: { show: false },
+    series: [{
+      type: 'graph' as const, layout: 'none' as const, coordinateSystem: undefined,
+      symbol: 'roundRect', roam: false,
+      label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600, lineHeight: 16 },
+      edgeSymbol: ['none', 'arrow'], edgeSymbolSize: [0, 8],
+      lineStyle: { color: '#999', width: 2, curveness: 0 },
+      data: schematicNodes,
+      links: schematicLinks,
+    }],
+  }
+
+  const schematicTab = (
+    <div>
+      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Live plant schematic — condenser water loop (cooling towers → CW pumps → chillers) and chilled water
+          loop (chillers → CHW pumps → header → AHU coils). Every figure shown is the real reading from that
+          component, aggregated only where the underlying equipment (cooling towers, pumps, AHU coils) isn't
+          individually named elsewhere.
+        </Text>
+      </Card>
+      <Card title="Chiller Plant — System Schematic">
+        <ReactECharts option={schematicOpt} theme={chartTheme} style={{ height: 820 }} />
+      </Card>
+    </div>
+  )
+
   return (
     <div style={{ padding: '24px 28px' }}>
       <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Chiller Plant</Title>
@@ -353,6 +417,7 @@ const ChillerPage: React.FC = observer(() => {
         defaultActiveKey="overview"
         items={[
           { key: 'overview', label: 'Overview', children: overviewTab },
+          { key: 'schematic', label: 'System Schematic', children: schematicTab },
           { key: 'flows', label: 'Flows & Hydraulics', children: flowsTab },
           { key: 'pumps', label: 'Pumps & Cooling Towers', children: pumpsTab },
           { key: 'trends', label: 'Trends', children: trendsTab },

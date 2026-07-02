@@ -171,7 +171,10 @@ const LightingPage: React.FC = observer(() => {
           scroll={{ x: 1200 }}
           columns={[
             { title: 'Zone', dataIndex: 'name', key: 'name', fixed: 'left', width: 170, render: (v) => <strong>{v}</strong> },
-            { title: 'Terminal', key: 'zone', width: 110, render: (_, z: LightingZone) => <Tag color={TERMINAL_COLOR[z.zone]}>{z.zone}</Tag> },
+            { title: 'Terminal', key: 'zone', width: 110,
+              filters: Object.keys(TERMINAL_COLOR).map(t => ({ text: t, value: t })),
+              onFilter: (value, z: LightingZone) => z.zone === value,
+              render: (_, z: LightingZone) => <Tag color={TERMINAL_COLOR[z.zone]}>{z.zone}</Tag> },
             { title: 'Fixtures', dataIndex: 'fixtureCount', key: 'fx', width: 90, render: (v: number) => v.toLocaleString() },
             { title: 'Dimming (actual / AI command)', key: 'dim', width: 170, render: (_, z: LightingZone) =>
               <RangeBar label="" value={z.dimmingActual} unit="%" min={0} max={100} zones={NEUTRAL_ZONES} target={z.dimmingCommand} precision={0} bare barWidth={70} /> },
@@ -182,7 +185,10 @@ const LightingPage: React.FC = observer(() => {
                 <span>{z.powerKw.toFixed(1)} kW</span><Sparkline data={windowHistory(z.powerHistory, 1)} color={TERMINAL_COLOR[z.zone]} width={60} height={22} />
               </div> },
             { title: 'Faulty Fixtures', key: 'flt', width: 120, render: (_, z: LightingZone) => faultText(z.faultyFixtureCount) },
-            { title: 'Health', key: 'h', width: 100, render: (_, z: LightingZone) => healthTag(z.health) },
+            { title: 'Health', key: 'h', width: 100,
+              filters: [{ text: 'Normal', value: 'ok' }, { text: 'Warning', value: 'warning' }, { text: 'Critical', value: 'critical' }],
+              onFilter: (value, z: LightingZone) => z.health === value,
+              render: (_, z: LightingZone) => healthTag(z.health) },
           ]}
         />
       </Card>

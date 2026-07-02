@@ -5,8 +5,8 @@ import type { MenuProps } from 'antd'
 import { observer } from 'mobx-react-lite'
 import {
   AppstoreOutlined,
-  ThunderboltOutlined,
-  CloudOutlined,
+  DashboardOutlined,
+  FilterOutlined,
   BankOutlined,
   SunOutlined,
   RiseOutlined,
@@ -99,8 +99,8 @@ const AppShell = observer(() => {
   type MenuItem = Required<MenuProps>['items'][number]
 
   const systemItems: MenuItem[] = [
-    { key: '/chiller', icon: <ThunderboltOutlined />, label: navLabel('Chiller Plant', hChiller), title: 'Chiller Plant' },
-    { key: '/ahu',     icon: <CloudOutlined />,       label: navLabel('AHUs', hAHU),              title: 'AHUs' },
+    { key: '/chiller', icon: <DashboardOutlined />,   label: navLabel('Chiller Plant', hChiller), title: 'Chiller Plant' },
+    { key: '/ahu',     icon: <FilterOutlined />,      label: navLabel('AHUs', hAHU),              title: 'AHUs' },
     { key: '/power',   icon: <BankOutlined />,        label: navLabel('Power & Grid', hPower),    title: 'Power & Grid' },
     { key: '/solar',   icon: <SunOutlined />,         label: navLabel('Solar & Export', hSolar),  title: 'Solar & Export' },
     { key: '/savings', icon: <RiseOutlined />,        label: navLabel('Energy Savings', hSavings),title: 'Energy Savings' },

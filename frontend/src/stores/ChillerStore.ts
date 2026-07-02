@@ -96,15 +96,15 @@ function deriveChiller(c: Chiller, wetBulb: number) {
 }
 
 function computeChillerHealth(c: Pick<Chiller, 'cop' | 'chwST' | 'chwSP' | 'approach'>): Chiller['health'] {
-  if (c.cop < 3.5) return 'critical'
-  if (c.cop < 3.8 || c.chwST > c.chwSP + 1.5 || c.approach > 8.5) return 'warning'
+  if (c.cop < 4.3) return 'critical'
+  if (c.cop < 4.6 || c.chwST > c.chwSP + 1.5 || c.approach > 8.5) return 'warning'
   return 'ok'
 }
 
 /** Flow is derived to track a per-chiller design COP (± noise) rather than being randomised
  *  independently of kW — that independence is what let COP swing to unrealistic values (e.g. 7+). */
 function flowForTargetCOP(kw: number, baseCOP: number, chwDeltaT: number): number {
-  const targetCOP = clamp(3.3, 6.0, gaussian(baseCOP, 0.15))
+  const targetCOP = clamp(4.2, 5.6, gaussian(baseCOP, 0.12))
   const targetCapacityKW = kw * targetCOP
   return clamp(100, 360, targetCapacityKW / (chwDeltaT * SPECIFIC_HEAT))
 }
@@ -117,7 +117,8 @@ function makeChiller(def: { id: string; name: string; location: string }): Chill
   const cwRT = clamp(34, 38, gaussian(36, 0.8))
   const load = clamp(30, 100, gaussian(65, 10))
   const loadFrac = load / 100
-  const baseCOP = clamp(3.8, 5.2, gaussian(4.4, 0.35))
+  // Efficient plant target: ~0.68-0.75 kW/RT (KW_PER_RT = 3.5168/COP), i.e. COP ≈ 4.7-5.2.
+  const baseCOP = clamp(4.6, 5.3, gaussian(4.9, 0.15))
   const chwFlow = flowForTargetCOP(kw, baseCOP, chwRT - chwST)
   const heatRejectKW = chwFlow * (chwRT - chwST) * SPECIFIC_HEAT + kw
   const cwFlow = clamp(150, 420, (heatRejectKW * (1 + gaussian(0, 0.02))) / ((cwRT - cwST) * SPECIFIC_HEAT))
@@ -214,9 +215,9 @@ export class ChillerStore {
           triggerValue: `CW ΔT = ${condenserRange.toFixed(1)}°C`,
         })
       }
-      if (c.cop < 3.8) {
+      if (c.cop < 4.6) {
         out.push({
-          ruleId: 'CHI-003', severity: c.cop < 3.5 ? 'critical' : 'warning', unit: c.id,
+          ruleId: 'CHI-003', severity: c.cop < 4.3 ? 'critical' : 'warning', unit: c.id,
           title: 'Low COP Detected',
           detail: `${c.name} COP = ${c.cop.toFixed(2)} (cooling capacity ${c.coolingCapacityRT.toFixed(0)} RT ÷ ${c.kw.toFixed(0)} kW electrical) is below efficiency threshold.`,
           recommendation: 'Review refrigerant charge, compressor health, and heat exchanger surfaces.',

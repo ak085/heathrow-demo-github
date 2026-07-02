@@ -20,6 +20,9 @@ const THD_I_ZONES  = buildZones({ min: 0, max: 25, warnHigh: 15, critHigh: 20 })
 const UNBAL_ZONES  = buildZones({ min: 0, max: 5, warnHigh: 2, critHigh: 3 })
 const FREQ_ZONES   = buildZones({ min: 49.5, max: 50.5, critLow: 49.8, warnLow: 49.9, warnHigh: 50.1, critHigh: 50.2 })
 const DEMAND_PCT_ZONES = buildZones({ min: 0, max: 110, warnHigh: 85, critHigh: 95 })
+const SYSTEM_COLOR: Record<MeterRow['system'], string> = {
+  'Chiller Plant': 'purple', 'Airside': 'magenta', 'Lighting': 'lime', 'Mech Fans': 'blue',
+}
 
 function healthBadge(pfHealth: 'ok' | 'warning' | 'critical') {
   return pfHealth === 'critical' ? <Badge status="error" text="Critical" />
@@ -32,9 +35,18 @@ function coloredText(value: number, zones: ReturnType<typeof buildZones>, text: 
   return <span style={{ color: lvl === 'ok' ? undefined : ZONE_COLOR[lvl], fontWeight: lvl === 'ok' ? 400 : 600 }}>{text}</span>
 }
 
+interface MeterRow {
+  id: string
+  name: string
+  system: 'Chiller Plant' | 'Airside' | 'Lighting' | 'Mech Fans'
+  location: string
+  kw: number
+  health: 'ok' | 'warning' | 'critical' | null
+}
+
 const PowerGridPage: React.FC = observer(() => {
   const store = useStore()
-  const { power } = store
+  const { power, chiller, ahu, lighting } = store
   const { substations, totalBuildingKw, chillerPlantKw, airsideKw, mechFanKw, lightingKw, otherKw,
           todayTotalKwh, todayChillerKwh, todayAirsideKwh, todayLightingKwh, todayMechFanKwh, todayOtherKwh,
           heatmapData, allFindings, avgPF } = power
@@ -294,6 +306,19 @@ const PowerGridPage: React.FC = observer(() => {
     }],
   }
 
+  const meterRows: MeterRow[] = [
+    ...chiller.chillers.map(c => ({
+      id: c.id, name: c.name, system: 'Chiller Plant' as const, location: c.location, kw: c.kw, health: c.health,
+    })),
+    ...ahu.ahus.map(a => ({
+      id: a.id, name: a.name, system: 'Airside' as const, location: a.zone, kw: a.fanKW + a.freshAirFanKW, health: a.health,
+    })),
+    ...lighting.zones.map(z => ({
+      id: z.id, name: z.name, system: 'Lighting' as const, location: z.zone, kw: z.powerKw, health: z.health,
+    })),
+    { id: 'MECH-AGG', name: 'Mechanical Fans (aggregate)', system: 'Mech Fans' as const, location: 'Plant-wide', kw: mechFanKw, health: null },
+  ]
+
   const subMetersTab = (
     <div>
       <Row gutter={[16, 16]}>
@@ -334,11 +359,40 @@ const PowerGridPage: React.FC = observer(() => {
           </Card>
         </Col>
       </Row>
-      <Row style={{ marginTop: 8 }}>
+      <Row style={{ marginTop: 8, marginBottom: 16 }}>
         <Col span={24}>
           <Text type="secondary" style={{ fontSize: 11 }}>Other (unmetered here — retail, IT, baggage systems etc.): {otherKw.toFixed(0)} kW now</Text>
         </Col>
       </Row>
+
+      <Card title="Individual Meter Readings" size="small">
+        <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+          The category totals above are the sum of these real individual points — not a single lump-sum meter.
+          Mechanical Fans has no per-unit sub-metering in this demo, so it appears as one aggregate row; every
+          other row is a real, individually tracked unit shown elsewhere on its own system page.
+        </Paragraph>
+        <Table<MeterRow>
+          dataSource={meterRows}
+          rowKey="id"
+          pagination={false}
+          size="small"
+          scroll={{ y: 420 }}
+          columns={[
+            { title: 'Meter', dataIndex: 'name', key: 'name', fixed: 'left', width: 150, render: (v) => <strong>{v}</strong> },
+            { title: 'System', key: 'system', width: 130,
+              filters: (['Chiller Plant', 'Airside', 'Lighting', 'Mech Fans'] as const).map(s => ({ text: s, value: s })),
+              onFilter: (value, r: MeterRow) => r.system === value,
+              render: (_, r: MeterRow) => <Tag color={SYSTEM_COLOR[r.system]}>{r.system}</Tag> },
+            { title: 'Location', dataIndex: 'location', key: 'loc', width: 170 },
+            { title: 'Power', key: 'kw', width: 110, sorter: (a: MeterRow, b: MeterRow) => a.kw - b.kw,
+              render: (_, r: MeterRow) => `${r.kw.toFixed(1)} kW` },
+            { title: 'Health', key: 'h', width: 100,
+              filters: [{ text: 'Normal', value: 'ok' }, { text: 'Warning', value: 'warning' }, { text: 'Critical', value: 'critical' }],
+              onFilter: (value, r: MeterRow) => r.health === value,
+              render: (_, r: MeterRow) => r.health ? healthBadge(r.health) : <Text type="secondary" style={{ fontSize: 11 }}>N/A</Text> },
+          ]}
+        />
+      </Card>
     </div>
   )
 
