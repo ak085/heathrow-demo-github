@@ -1,4 +1,4 @@
-import React, { useState, createContext, useContext } from 'react'
+import React, { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { ConfigProvider, Layout, Menu, Tag, Button, theme as antdTheme } from 'antd'
 import type { MenuProps } from 'antd'
@@ -20,7 +20,7 @@ import {
 } from '@ant-design/icons'
 import { useStore } from './stores'
 import { overallHealth } from './types/fdd'
-import { getStoredUser, clearAuth } from './auth'
+import { getStoredUser, clearAuth, validateSession } from './auth'
 import type { AuthUser } from './auth'
 import LandingPage   from './pages/LandingPage'
 import ChillerPage   from './pages/ChillerPage'
@@ -303,9 +303,27 @@ const AppShell = observer(() => {
 // ─── Root — manages auth + theme ──────────────────────────────────────────
 const ThemedRoot = observer(() => {
   const store = useStore()
-  const [user, setUser] = useState<AuthUser | null>(getStoredUser)
+  const [user, setUser]           = useState<AuthUser | null>(getStoredUser)
+  const [checkingSession, setCheckingSession] = useState<boolean>(!!getStoredUser())
 
   function handleLogout() { clearAuth(); setUser(null) }
+
+  // A cached user blob in localStorage doesn't mean the paired JWT is still valid
+  // (it can expire or be revoked server-side) — confirm with the backend before
+  // trusting it, otherwise a dead token shows as "logged in" with every API call failing.
+  useEffect(() => {
+    if (!getStoredUser()) return
+    let cancelled = false
+    validateSession().then(valid => {
+      if (cancelled) return
+      if (!valid) {
+        clearAuth()
+        setUser(null)
+      }
+      setCheckingSession(false)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const themeConfig = {
     algorithm: store.darkMode ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
@@ -318,13 +336,15 @@ const ThemedRoot = observer(() => {
 
   return (
     <ConfigProvider theme={themeConfig}>
-      {user
-        ? (
-          <AuthContext.Provider value={{ user, onLogout: handleLogout }}>
-            <AppShell />
-          </AuthContext.Provider>
-        )
-        : <LoginPage onLogin={setUser} />
+      {checkingSession
+        ? null
+        : user
+          ? (
+            <AuthContext.Provider value={{ user, onLogout: handleLogout }}>
+              <AppShell />
+            </AuthContext.Provider>
+          )
+          : <LoginPage onLogin={setUser} />
       }
     </ConfigProvider>
   )

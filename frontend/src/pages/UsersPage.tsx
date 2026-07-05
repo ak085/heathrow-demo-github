@@ -6,7 +6,7 @@ import {
 import {
   TeamOutlined, PlusOutlined, KeyOutlined, DeleteOutlined,
 } from '@ant-design/icons'
-import { authHeaders } from '../auth'
+import { authorizedFetch } from '../auth'
 
 const { Title, Text } = Typography
 
@@ -38,7 +38,7 @@ const UsersPage: React.FC = () => {
   async function fetchUsers() {
     setLoading(true)
     try {
-      const res = await fetch('/api/users', { headers: authHeaders() })
+      const res = await authorizedFetch('/api/users')
       if (!res.ok) throw new Error('Failed to load')
       setUsers(await res.json())
     } catch {
@@ -52,9 +52,9 @@ const UsersPage: React.FC = () => {
 
   async function addUser(values: AddFormValues) {
     try {
-      const res = await fetch('/api/users', {
+      const res = await authorizedFetch('/api/users', {
         method:  'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(values),
       })
       if (!res.ok) {
@@ -71,9 +71,9 @@ const UsersPage: React.FC = () => {
 
   async function toggleEnabled(id: number, enabled: boolean) {
     try {
-      const res = await fetch(`/api/users/${id}`, {
+      const res = await authorizedFetch(`/api/users/${id}`, {
         method:  'PUT',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ enabled }),
       })
       if (!res.ok) throw new Error('Failed')
@@ -86,7 +86,7 @@ const UsersPage: React.FC = () => {
 
   async function deleteUser(id: number, username: string) {
     try {
-      const res = await fetch(`/api/users/${id}`, { method: 'DELETE', headers: authHeaders() })
+      const res = await authorizedFetch(`/api/users/${id}`, { method: 'DELETE' })
       if (!res.ok) {
         const err = await res.json()
         throw new Error((err as { detail?: string }).detail || 'Failed')
@@ -104,9 +104,9 @@ const UsersPage: React.FC = () => {
       return
     }
     try {
-      const res = await fetch(`/api/users/${resetModal.userId}/reset-password`, {
+      const res = await authorizedFetch(`/api/users/${resetModal.userId}/reset-password`, {
         method:  'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ new_password: newPw }),
       })
       if (!res.ok) throw new Error('Failed')

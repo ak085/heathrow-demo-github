@@ -57,3 +57,29 @@ export function authHeaders(): Record<string, string> {
   const token = getStoredToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
+
+/**
+ * fetch() wrapper for authenticated endpoints. Clears the stored session on a 401
+ * so a dead/expired token can't keep silently failing every call forever — the caller
+ * still sees the 401 response, but the next app-mount/render will fall back to login.
+ */
+export async function authorizedFetch(input: RequestInfo, init: RequestInit = {}): Promise<Response> {
+  const res = await fetch(input, {
+    ...init,
+    headers: { ...init.headers, ...authHeaders() },
+  })
+  if (res.status === 401) clearAuth()
+  return res
+}
+
+/** GET /api/auth/me — resolves true only if the stored token is still accepted by the backend */
+export async function validateSession(): Promise<boolean> {
+  const token = getStoredToken()
+  if (!token) return false
+  try {
+    const res = await fetch('/api/auth/me', { headers: authHeaders() })
+    return res.ok
+  } catch {
+    return false
+  }
+}
