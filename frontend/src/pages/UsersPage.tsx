@@ -118,6 +118,13 @@ const UsersPage: React.FC = () => {
     }
   }
 
+  // Disable disable/delete only for whichever admin account is currently the sole
+  // active admin — otherwise a user could lock every admin out of the Users page.
+  const activeAdminCount = users.filter(u => u.role === 'admin' && u.enabled).length
+  function isLastActiveAdmin(u: User): boolean {
+    return u.role === 'admin' && u.enabled && activeAdminCount <= 1
+  }
+
   const columns = [
     {
       title: 'Username', dataIndex: 'username', key: 'username', width: 140,
@@ -138,7 +145,7 @@ const UsersPage: React.FC = () => {
         <Switch
           size="small"
           checked={v}
-          disabled={u.username === 'admin'}
+          disabled={isLastActiveAdmin(u)}
           onChange={(en) => toggleEnabled(u.id, en)}
         />
       ),
@@ -164,11 +171,11 @@ const UsersPage: React.FC = () => {
             description="This action cannot be undone."
             onConfirm={() => deleteUser(u.id, u.username)}
             okText="Delete" cancelText="Cancel" okType="danger"
-            disabled={u.username === 'admin'}
+            disabled={isLastActiveAdmin(u)}
           >
             <Button
               size="small" danger icon={<DeleteOutlined />}
-              disabled={u.username === 'admin'}
+              disabled={isLastActiveAdmin(u)}
             >
               Delete
             </Button>
@@ -210,7 +217,7 @@ const UsersPage: React.FC = () => {
               loading={loading}
             />
             <Text type="secondary" style={{ fontSize: 11, marginTop: 10, display: 'block' }}>
-              The <code>admin</code> account cannot be deleted or disabled.
+              The last remaining active admin account cannot be deleted or disabled.
               Viewer accounts can access all equipment pages but not this Users page.
             </Text>
           </Card>
