@@ -1,7 +1,8 @@
 export interface AuthUser {
-  username:    string
-  role:        'admin' | 'viewer'
-  displayName: string
+  username:           string
+  role:               'admin' | 'viewer'
+  displayName:        string
+  passwordExpiresAt:  string | null
 }
 
 const TOKEN_KEY = 'dbs_auth_token'
@@ -45,8 +46,9 @@ export async function apiLogin(username: string, password: string): Promise<Auth
   const data = await res.json()
   const user: AuthUser = {
     username,
-    role:        data.role as 'admin' | 'viewer',
-    displayName: data.display_name,
+    role:              data.role as 'admin' | 'viewer',
+    displayName:       data.display_name,
+    passwordExpiresAt: data.password_expires_at ?? null,
   }
   saveAuth(data.access_token, user)
   return user

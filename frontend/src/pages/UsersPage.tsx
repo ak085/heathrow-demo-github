@@ -1,29 +1,33 @@
 import React, { useState, useEffect } from 'react'
 import {
   Card, Row, Col, Table, Tag, Button, Form, Input, Select, message,
-  Space, Typography, Popconfirm, Modal, Switch,
+  Space, Typography, Popconfirm, Modal, Switch, DatePicker,
 } from 'antd'
 import {
-  TeamOutlined, PlusOutlined, KeyOutlined, DeleteOutlined,
+  TeamOutlined, PlusOutlined, KeyOutlined, DeleteOutlined, ClockCircleOutlined,
 } from '@ant-design/icons'
+import dayjs, { Dayjs } from 'dayjs'
 import { authHeaders, getStoredUser } from '../auth'
+import { expiryTag } from '../utils/expiry'
 
 const { Title, Text } = Typography
 
 interface User {
-  id:           number
-  username:     string
-  display_name: string
-  role:         string
-  enabled:      boolean
-  created_at:   string
+  id:                   number
+  username:             string
+  display_name:         string
+  role:                 string
+  enabled:              boolean
+  created_at:           string
+  password_expires_at:  string | null
 }
 
 interface AddFormValues {
-  username:     string
-  password:     string
-  display_name: string
-  role:         string
+  username:             string
+  password:             string
+  display_name:         string
+  role:                 string
+  password_expires_at?: Dayjs
 }
 
 const UsersPage: React.FC = () => {
@@ -35,6 +39,10 @@ const UsersPage: React.FC = () => {
     open: false, userId: null, name: '',
   })
   const [newPw, setNewPw] = useState('')
+  const [expiryModal, setExpiryModal] = useState<{ open: boolean; userId: number | null; name: string }>({
+    open: false, userId: null, name: '',
+  })
+  const [expiryDate, setExpiryDate] = useState<Dayjs | null>(null)
 
   async function fetchUsers() {
     setLoading(true)
@@ -56,7 +64,12 @@ const UsersPage: React.FC = () => {
       const res = await fetch('/api/users', {
         method:  'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify(values),
+        body:    JSON.stringify({
+          ...values,
+          password_expires_at: values.password_expires_at
+            ? values.password_expires_at.format('YYYY-MM-DD')
+            : undefined,
+        }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -119,6 +132,35 @@ const UsersPage: React.FC = () => {
     }
   }
 
+  async function saveExpiry(clear: boolean) {
+    if (!expiryModal.userId) return
+    if (!clear && !expiryDate) {
+      message.warning('Pick a date, or use "Clear expiry"')
+      return
+    }
+    try {
+      const res = await fetch(`/api/users/${expiryModal.userId}`, {
+        method:  'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body:    JSON.stringify(
+          clear
+            ? { clear_password_expiry: true }
+            : { password_expires_at: expiryDate!.format('YYYY-MM-DD') }
+        ),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error((err as { detail?: string }).detail || 'Failed')
+      }
+      message.success(clear ? `Expiry cleared for ${expiryModal.name}` : `Expiry updated for ${expiryModal.name}`)
+      setExpiryModal({ open: false, userId: null, name: '' })
+      setExpiryDate(null)
+      fetchUsers()
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : 'Failed to update expiry')
+    }
+  }
+
   const columns = [
     {
       title: 'Username', dataIndex: 'username', key: 'username', width: 140,
@@ -151,6 +193,26 @@ const UsersPage: React.FC = () => {
       ),
     },
     {
+      title: 'Password Expiry', dataIndex: 'password_expires_at', key: 'expiry', width: 150,
+      render: (v: string | null, u: User) => {
+        const tag = expiryTag(v)
+        return (
+          <Space size={4}>
+            {tag
+              ? <Tag color={tag.color} style={{ fontSize: 11 }}>{tag.text}</Tag>
+              : <Text type="secondary" style={{ fontSize: 12 }}>No expiry</Text>}
+            <Button
+              size="small" type="text" icon={<ClockCircleOutlined />}
+              onClick={() => {
+                setExpiryModal({ open: true, userId: u.id, name: u.display_name })
+                setExpiryDate(v ? dayjs(v) : null)
+              }}
+            />
+          </Space>
+        )
+      },
+    },
+    {
       title: 'Actions', key: 'actions', width: 220,
       render: (_: unknown, u: User) => (
         <Space>
@@ -180,7 +242,7 @@ const UsersPage: React.FC = () => {
   ]
 
   return (
-    <div style={{ padding: '20px 24px', maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ padding: '20px 24px', maxWidth: 1280, margin: '0 auto' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
@@ -189,59 +251,64 @@ const UsersPage: React.FC = () => {
         <Tag color="red" style={{ marginLeft: 8, fontSize: 11 }}>Admin only</Tag>
       </div>
 
-      <Row gutter={[24, 24]}>
+      {/* Users table */}
+      <Card
+        title={`Users (${users.length})`}
+        size="small"
+        extra={
+          <Button size="small" onClick={fetchUsers} loading={loading}>
+            Refresh
+          </Button>
+        }
+        style={{ marginBottom: 24 }}
+      >
+        <Table<User>
+          dataSource={users}
+          columns={columns}
+          rowKey="id"
+          size="small"
+          pagination={false}
+          loading={loading}
+          scroll={{ x: 880 }}
+        />
+        <Text type="secondary" style={{ fontSize: 11, marginTop: 10, display: 'block' }}>
+          You cannot delete or disable your own account.
+          Viewer accounts can access all equipment pages but not this Users page.
+        </Text>
+      </Card>
 
-        {/* Users table */}
-        <Col span={16}>
-          <Card
-            title={`Users (${users.length})`}
-            size="small"
-            extra={
-              <Button size="small" onClick={fetchUsers} loading={loading}>
-                Refresh
-              </Button>
-            }
-          >
-            <Table<User>
-              dataSource={users}
-              columns={columns}
-              rowKey="id"
-              size="small"
-              pagination={false}
-              loading={loading}
-            />
-            <Text type="secondary" style={{ fontSize: 11, marginTop: 10, display: 'block' }}>
-              You cannot delete or disable your own account.
-              Viewer accounts can access all equipment pages but not this Users page.
-            </Text>
-          </Card>
-        </Col>
-
-        {/* Add user form */}
-        <Col span={8}>
-          <Card
-            title={<><PlusOutlined style={{ marginRight: 6 }} />Add User</>}
-            size="small"
-          >
-            <Form form={addForm} layout="vertical" size="small" onFinish={addUser}>
+      {/* Add user form */}
+      <Card
+        title={<><PlusOutlined style={{ marginRight: 6 }} />Add User</>}
+        size="small"
+      >
+        <Form form={addForm} layout="vertical" size="small" onFinish={addUser}>
+          <Row gutter={16}>
+            <Col xs={24} sm={12} md={5}>
               <Form.Item
                 name="username" label="Username"
                 rules={[{ required: true, message: 'Required' }]}
               >
                 <Input placeholder="john.doe" autoComplete="off" />
               </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={5}>
               <Form.Item
                 name="display_name" label="Display Name"
                 rules={[{ required: true, message: 'Required' }]}
               >
                 <Input placeholder="John Doe" />
               </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={4}>
               <Form.Item name="role" label="Role" initialValue="viewer">
                 <Select options={[
-                  { value: 'viewer', label: 'Viewer — equipment pages only' },
-                  { value: 'admin',  label: 'Admin — can manage users' },
+                  { value: 'viewer', label: 'Viewer' },
+                  { value: 'admin',  label: 'Admin' },
                 ]} />
               </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={5}>
               <Form.Item
                 name="password" label="Initial Password"
                 rules={[
@@ -251,13 +318,24 @@ const UsersPage: React.FC = () => {
               >
                 <Input.Password placeholder="Min 6 characters" autoComplete="new-password" />
               </Form.Item>
-              <Button type="primary" htmlType="submit" size="small" block icon={<PlusOutlined />}>
-                Create User
-              </Button>
-            </Form>
-          </Card>
-        </Col>
-      </Row>
+            </Col>
+            <Col xs={24} sm={12} md={5}>
+              <Form.Item
+                name="password_expires_at" label="Password Expires On (optional)"
+              >
+                <DatePicker
+                  style={{ width: '100%' }}
+                  disabledDate={(d) => d.isBefore(dayjs().startOf('day'))}
+                  placeholder="No expiry"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Button type="primary" htmlType="submit" size="small" icon={<PlusOutlined />}>
+            Create User
+          </Button>
+        </Form>
+      </Card>
 
       {/* Reset password modal */}
       <Modal
@@ -276,6 +354,28 @@ const UsersPage: React.FC = () => {
           placeholder="New password"
           autoComplete="new-password"
           onPressEnter={doResetPassword}
+        />
+      </Modal>
+
+      {/* Password expiry modal */}
+      <Modal
+        title={<><ClockCircleOutlined style={{ marginRight: 8 }} />Password Expiry — {expiryModal.name}</>}
+        open={expiryModal.open}
+        onCancel={() => { setExpiryModal({ open: false, userId: null, name: '' }); setExpiryDate(null) }}
+        footer={[
+          <Button key="clear" onClick={() => saveExpiry(true)}>Clear expiry</Button>,
+          <Button key="save" type="primary" onClick={() => saveExpiry(false)}>Set expiry</Button>,
+        ]}
+      >
+        <Text style={{ display: 'block', marginBottom: 12, color: '#595959' }}>
+          Password stops working at midnight (UK time) at the start of the chosen day:
+        </Text>
+        <DatePicker
+          style={{ width: '100%' }}
+          value={expiryDate}
+          onChange={setExpiryDate}
+          disabledDate={(d) => d.isBefore(dayjs().startOf('day'))}
+          placeholder="No expiry"
         />
       </Modal>
     </div>
