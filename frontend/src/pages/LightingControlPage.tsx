@@ -1,9 +1,16 @@
 import React from 'react'
 import { observer } from 'mobx-react-lite'
-import { Card, Row, Col, Typography, Tag, Switch, Slider, Button, Badge, message, Alert } from 'antd'
+import { Card, Row, Col, Typography, Tag, Switch, Slider, Button, Badge, Statistic, message, Alert } from 'antd'
+import ReactECharts from 'echarts-for-react'
 import { UndoOutlined, WarningOutlined } from '@ant-design/icons'
 import { useStore } from '../stores'
+import { Gauge } from '../components/Gauge'
+import { buildZones } from '../components/RangeBar'
+import { useEchartsTheme } from '../theme/echartsTheme'
+import PageHeroImage from '../components/PageHeroImage'
 import type { LightingZone } from '../stores/LightingStore'
+
+const DIMMING_ZONES = buildZones({ min: 0, max: 100 })
 
 const { Title, Paragraph, Text } = Typography
 const PURPLE = '#5a0057'
@@ -19,12 +26,25 @@ function healthBadge(h: 'ok' | 'warning' | 'critical') {
 }
 
 const LightingControlPage: React.FC = observer(() => {
-  const { lighting } = useStore()
+  const store = useStore()
+  const { lighting } = store
   const { zones } = lighting
+  const chartTheme = useEchartsTheme()
+
+  const zonesOnOpt = {
+    series: [{
+      type: 'pie' as const, radius: ['65%', '85%'], startAngle: 90,
+      label: { show: true, position: 'center' as const, formatter: `${zones.filter(z => z.onOff).length}/${zones.length}`, fontSize: 16, fontWeight: 700 },
+      data: [
+        { value: zones.filter(z => z.onOff).length, itemStyle: { color: PURPLE } },
+        { value: zones.filter(z => !z.onOff).length, itemStyle: { color: '#f0f0f0' } },
+      ],
+    }],
+  }
 
   return (
     <div style={{ padding: '24px 28px' }}>
-      <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Lighting Control</Title>
+      <Title level={3} style={{ color: undefined, marginBottom: 4 }}>Lighting Control</Title>
       <Paragraph type="secondary" style={{ marginBottom: 16 }}>
         Direct DALI zone control — on/off and dimming setpoints, written straight to the same
         zones shown on the <strong>Lighting — Power Monitoring</strong> page.
@@ -35,6 +55,45 @@ const LightingControlPage: React.FC = observer(() => {
         message="Demo mode"
         description="Commands here update the local simulation directly. In production, writes go to the DALI gateway (BACnet/Modbus integration), which then reports back the real fixture state — the same round trip the monitoring page displays."
       />
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/airport_led_lighting_control_3d.png"
+            alt="Airport LED lighting control"
+            caption="Terminal LED lighting — DALI zone control overview"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="Control Summary" size="small" style={{ height: '100%' }}>
+            <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+              <Col span={12}>
+                <Card size="small" bodyStyle={{ padding: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <ReactECharts option={zonesOnOpt} theme={chartTheme} style={{ width: 64, height: 64, flexShrink: 0 }} />
+                    <div style={{ marginLeft: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>Zones On</Text>
+                      <div style={{ fontSize: 11 }}>{zones.filter(z => z.manualOverride).length} manual override{zones.filter(z => z.manualOverride).length === 1 ? '' : 's'}</div>
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+              <Col span={12}>
+                <Card size="small" bodyStyle={{ padding: 8 }}>
+                  <Gauge label="Avg Dimming" value={zones.reduce((s, z) => s + z.dimmingActual, 0) / zones.length}
+                    min={0} max={100} zones={DIMMING_ZONES} unit="%" precision={0} height={90} />
+                </Card>
+              </Col>
+            </Row>
+            {zones.some(z => z.hardwareFaultLocked) && (
+              <Card size="small" style={{ border: '1px solid #ffa39e' }} bodyStyle={{ padding: 8 }}>
+                <Statistic title="Hardware Faults" value={zones.filter(z => z.hardwareFaultLocked).length}
+                  valueStyle={{ fontSize: 20, color: '#cf1322' }} />
+              </Card>
+            )}
+          </Card>
+        </Col>
+      </Row>
 
       <Row gutter={[16, 16]}>
         {zones.map(z => (
@@ -65,7 +124,7 @@ const LightingControlPage: React.FC = observer(() => {
 
               {z.hardwareFaultLocked && (
                 <div style={{
-                  fontSize: 11, color: '#cf1322', background: '#fff1f0', border: '1px solid #ffa39e',
+                  fontSize: 11, color: '#cf1322', border: '1px solid #ffa39e',
                   borderRadius: 4, padding: '4px 8px', marginBottom: 10,
                 }}>
                   <WarningOutlined style={{ marginRight: 4 }} />
@@ -90,7 +149,7 @@ const LightingControlPage: React.FC = observer(() => {
                 />
               </div>
 
-              <div style={{ fontSize: 11, color: '#8c8c8c', borderTop: '1px solid #f0f0f0', paddingTop: 8, marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: undefined, borderTop: '1px solid rgba(128,128,128,0.2)', paddingTop: 8, marginTop: 8 }}>
                 Fixtures: <strong>{z.fixtureCount.toLocaleString()}</strong> &nbsp;|&nbsp;
                 Power: <strong>{z.powerKw.toFixed(1)} kW</strong> &nbsp;|&nbsp;
                 Footfall: <strong>{z.footfallPct.toFixed(0)}%</strong>

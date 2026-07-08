@@ -11,6 +11,9 @@ services:
   heathrow-demo-backend:
     build: ./backend
     container_name: heathrow-demo-backend
-    volumes:
-      - ./data:/data
     restart: unless-stopped
+    volumes:
+      - heathrow_db:/data
+
+volumes:
+  heathrow_db:

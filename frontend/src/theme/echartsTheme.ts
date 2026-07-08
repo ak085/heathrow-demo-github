@@ -19,12 +19,12 @@ const base = (textColor: string, splitColor: string) => ({
   categoryAxis: {
     axisLine: { lineStyle: { color: splitColor } },
     axisLabel: { color: textColor },
-    splitLine: { lineStyle: { color: splitColor } },
+    splitLine: { show: true, lineStyle: { color: splitColor } },
   },
   valueAxis: {
     axisLine: { lineStyle: { color: splitColor } },
     axisLabel: { color: textColor },
-    splitLine: { lineStyle: { color: splitColor } },
+    splitLine: { show: true, lineStyle: { color: splitColor } },
   },
 })
 

@@ -8,6 +8,8 @@ import { RangeBar, buildZones, zoneAt, ZONE_COLOR } from '../components/RangeBar
 import { Gauge } from '../components/Gauge'
 import { Sparkline } from '../components/Sparkline'
 import { TimelineSwitch, type TimelineDays } from '../components/TimelineSwitch'
+import PageHeroImage from '../components/PageHeroImage'
+import { FlashValue } from '../components/FlashValue'
 import { useEchartsTheme } from '../theme/echartsTheme'
 import { windowHistory, timeLabels, labelInterval, dayMarkLine } from '../utils/history'
 import type { Chiller } from '../stores/ChillerStore'
@@ -84,6 +86,90 @@ const ChillerPage: React.FC = observer(() => {
     }],
   }
 
+  // Load % vs COP — reveals the efficiency curve across the fleet, not just a ranking.
+  const loadVsCopOpt = {
+    tooltip: {
+      trigger: 'item' as const,
+      formatter: (p: any) => `${p.data[2]}<br/>Load ${p.data[0].toFixed(0)}%  |  COP ${p.data[1].toFixed(2)}`,
+    },
+    grid: { left: 45, right: 20, top: 16, bottom: 34 },
+    xAxis: { type: 'value' as const, name: 'Load %', min: 20, max: 100, nameLocation: 'middle' as const, nameGap: 26 },
+    yAxis: { type: 'value' as const, name: 'COP', min: 3, max: 6 },
+    series: [{
+      type: 'scatter' as const,
+      symbolSize: 16,
+      data: chillers.map(c => [Math.round(c.load), Number(c.cop.toFixed(2)), c.name]),
+      itemStyle: { color: (p: any) => ZONE_COLOR[zoneAt(COP_ZONES, p.data[1])] },
+      label: { show: true, formatter: (p: any) => p.data[2], position: 'top' as const, fontSize: 10, color: undefined },
+    }],
+  }
+
+  // Run hours — maintenance-relevant ranking, sorted longest-running first.
+  const runHoursSorted = [...chillers].sort((a, b) => b.runHours - a.runHours)
+  const runHoursOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 60, right: 30, top: 10, bottom: 20 },
+    xAxis: { type: 'value' as const, name: 'hours' },
+    yAxis: { type: 'category' as const, data: runHoursSorted.map(c => c.name), inverse: true },
+    series: [{
+      type: 'bar' as const,
+      data: runHoursSorted.map(c => ({
+        value: c.runHours,
+        itemStyle: { color: c.runHours > 16000 ? '#faad14' : '#13a8a8' },
+      })),
+      barWidth: 16,
+      label: { show: true, position: 'right' as const, formatter: (p: any) => p.value.toLocaleString() },
+    }],
+  }
+
+  // Fleet health matrix — Load/COP/kW-per-RT/Approach normalised 0-100 per chiller, one heatmap.
+  const heatmapMetrics = ['Load %', 'COP', 'kW/RT', 'Approach'] as const
+  function heatmapCellScore(c: Chiller, metric: typeof heatmapMetrics[number]): number {
+    if (metric === 'Load %') return c.load
+    if (metric === 'COP') return normCOP(c.cop)
+    if (metric === 'kW/RT') return 100 - clampPct((c.kwPerRT - 0.5) / (1.0 - 0.5) * 100)
+    return 100 - clampPct((c.approach / 12) * 100)
+  }
+  function clampPct(v: number) { return Math.min(100, Math.max(0, v)) }
+  const heatmapData: [number, number, number][] = []
+  chillers.forEach((c, ci) => {
+    heatmapMetrics.forEach((m, mi) => {
+      heatmapData.push([mi, ci, Math.round(heatmapCellScore(c, m))])
+    })
+  })
+  const fleetHeatmapOpt = {
+    tooltip: {
+      position: 'top' as const,
+      formatter: (p: any) => `${chillers[p.data[1]].name} — ${heatmapMetrics[p.data[0]]}: ${p.data[2]}`,
+    },
+    grid: { left: 70, right: 20, top: 10, bottom: 30 },
+    xAxis: { type: 'category' as const, data: heatmapMetrics, splitArea: { show: true } },
+    yAxis: { type: 'category' as const, data: chillers.map(c => c.name), splitArea: { show: true } },
+    visualMap: {
+      min: 0, max: 100, show: false,
+      inRange: { color: ['#cf1322', '#faad14', '#52c41a'] },
+    },
+    series: [{
+      type: 'heatmap' as const,
+      data: heatmapData,
+      label: { show: true, fontSize: 10, formatter: (p: any) => p.data[2] },
+    }],
+  }
+
+  // Cooling capacity — vertical column chart (orientation variety vs. the horizontal bars above).
+  const coolingCapBarOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 55, right: 20, top: 34, bottom: 30 },
+    xAxis: { type: 'category' as const, data: chillers.map(c => c.name) },
+    yAxis: { type: 'value' as const, name: 'RT', nameGap: 14 },
+    series: [{
+      type: 'bar' as const,
+      data: chillers.map(c => ({ value: Math.round(c.coolingCapacityRT), itemStyle: { color: '#13a8a8' } })),
+      barWidth: '55%',
+      label: { show: true, position: 'top' as const, fontSize: 10 },
+    }],
+  }
+
   const fleetAvg = {
     load: chillers.reduce((s, c) => s + c.load, 0) / chillers.length,
     cop: chillers.reduce((s, c) => s + normCOP(c.cop), 0) / chillers.length,
@@ -115,7 +201,7 @@ const ChillerPage: React.FC = observer(() => {
           },
           {
             name: 'Fleet avg', value: [fleetAvg.load, fleetAvg.cop, fleetAvg.chwPump, fleetAvg.cwPump, fleetAvg.ctFan],
-            lineStyle: { color: '#8c8c8c', type: 'dashed' }, itemStyle: { color: '#8c8c8c' }, areaStyle: { opacity: 0 },
+            lineStyle: { color: undefined, type: 'dashed' }, itemStyle: { color: undefined }, areaStyle: { opacity: 0 },
           },
         ],
       }],
@@ -136,7 +222,7 @@ const ChillerPage: React.FC = observer(() => {
           zones={buildZones({ min: 100, max: 350 })} target={c.chwFlowSP} precision={0} compact />
         <RangeBar label={`${c.name} — CW Flow`} value={c.cwFlow} unit=" L/s" min={140} max={450}
           zones={buildZones({ min: 140, max: 450 })} target={c.cwFlowSP} precision={0} compact />
-        <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: undefined, marginTop: 4 }}>
           Run hours: <strong>{c.runHours.toLocaleString()}</strong> &nbsp;|&nbsp;
           Cooling capacity: <strong>{c.coolingCapacityRT.toFixed(0)} RT</strong> ({c.coolingCapacityKW.toFixed(0)} kWth) &nbsp;|&nbsp;
           kW/RT: {coloredText(c.kwPerRT, KW_PER_RT_ZONES, c.kwPerRT.toFixed(2))}
@@ -149,54 +235,108 @@ const ChillerPage: React.FC = observer(() => {
   const overviewTab = (
     <div>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={6}>
-          <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <ReactECharts option={powerBreakdownOpt} theme={chartTheme} style={{ width: 110, height: 110, flexShrink: 0 }} />
-              <div style={{ marginLeft: 8 }}>
-                <div style={{ fontSize: 11, color: '#8c8c8c' }}>Total Plant Power</div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: PURPLE, marginBottom: 6 }}>{chillerPlantKw.toFixed(0)} kW</div>
-                <div style={{ fontSize: 11 }}><span style={{ color: PURPLE }}>■</span> Chillers {chillerPlantKw.toFixed(0)}</div>
-                <div style={{ fontSize: 11 }}><span style={{ color: '#9b59b6' }}>■</span> Pumps+CT {plantAuxKw.toFixed(0)}</div>
-                <div style={{ fontSize: 11 }}><span style={{ color: '#1677ff' }}>■</span> Airside {airsideKw.toFixed(0)}</div>
-                <div style={{ fontSize: 11 }}><span style={{ color: '#13a8a8' }}>■</span> Mech Fans {mechFanKw.toFixed(0)}</div>
-              </div>
-            </div>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/heathrow_schematic_v2_ground_pumps.png"
+            alt="Chiller plant 3D render"
+            caption="Central plant — chilled water generation overview"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
+                <div style={{ fontSize: 11, color: undefined }}>Total Plant Power</div>
+                <div style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}><FlashValue value={chillerPlantKw}>{chillerPlantKw.toFixed(0)} kW</FlashValue></div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <ReactECharts option={powerBreakdownOpt} theme={chartTheme} style={{ width: 90, height: 90, flexShrink: 0 }} />
+                  <div style={{ marginLeft: 8 }}>
+                    <div style={{ fontSize: 11 }}><span style={{ color: PURPLE }}>■</span> Chillers {chillerPlantKw.toFixed(0)}</div>
+                    <div style={{ fontSize: 11 }}><span style={{ color: '#9b59b6' }}>■</span> Pumps+CT {plantAuxKw.toFixed(0)}</div>
+                    <div style={{ fontSize: 11 }}><span style={{ color: '#1677ff' }}>■</span> Airside {airsideKw.toFixed(0)}</div>
+                    <div style={{ fontSize: 11 }}><span style={{ color: '#13a8a8' }}>■</span> Mech Fans {mechFanKw.toFixed(0)}</div>
+                  </div>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} bodyStyle={{ padding: 8 }}>
+                <Gauge label="Avg COP" value={avgCOP} min={3} max={6.2} zones={COP_ZONES} height={170} />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%', textAlign: 'center' }}>
+                <Statistic title="Total Cooling Capacity" value={totalCoolingCapRT.toFixed(0)} suffix="RT"
+                  valueStyle={{ fontWeight: 700, fontSize: 24 }} />
+                <div style={{ fontSize: 11, color: undefined, marginTop: 6 }}>= flow × ΔT × 4.186 (BTU-meter calc)</div>
+                <div style={{ marginTop: 10 }}>
+                  <span style={{ fontSize: 11, color: undefined }}>Plant kW/RT: </span>
+                  {coloredText(avgKwPerRT, KW_PER_RT_ZONES, avgKwPerRT.toFixed(2))}
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} title="Setpoint Tracking" bodyStyle={{ paddingBottom: 4 }}>
+                <RangeBar label="Avg CHW Supply Temp" value={avgCHWST} unit="°C" min={5} max={10} zones={CHW_ST_ZONES} precision={1} compact />
+                <RangeBar label="Avg CW Supply Temp" value={avgCWST} unit="°C" min={26} max={36} zones={CW_ST_ZONES} precision={1} compact />
+              </Card>
+            </Col>
+          </Row>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
+          <Card title="Fleet COP Comparison" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={copCompareOpt} theme={chartTheme} style={{ height: 40 + chillers.length * 34 }} />
           </Card>
         </Col>
-        <Col xs={24} md={5}>
-          <Card style={{ height: '100%' }} bodyStyle={{ padding: 8 }}>
-            <Gauge label="Avg COP" value={avgCOP} min={3} max={6.2} zones={COP_ZONES} height={170} />
-          </Card>
-        </Col>
-        <Col xs={24} md={5}>
-          <Card style={{ height: '100%', textAlign: 'center' }}>
-            <Statistic title="Total Cooling Capacity" value={totalCoolingCapRT.toFixed(0)} suffix="RT"
-              valueStyle={{ fontWeight: 700, fontSize: 24 }} />
-            <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 6 }}>= flow × ΔT × 4.186 (BTU-meter calc)</div>
-            <div style={{ marginTop: 10 }}>
-              <span style={{ fontSize: 11, color: '#8c8c8c' }}>Plant kW/RT: </span>
-              {coloredText(avgKwPerRT, KW_PER_RT_ZONES, avgKwPerRT.toFixed(2))}
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card style={{ height: '100%' }} title="Plant-Wide Setpoint Tracking" bodyStyle={{ paddingBottom: 4 }}>
-            <RangeBar label="Avg CHW Supply Temp" value={avgCHWST} unit="°C" min={5} max={10} zones={CHW_ST_ZONES} precision={1} compact />
-            <RangeBar label="Avg CW Supply Temp" value={avgCWST} unit="°C" min={26} max={36} zones={CW_ST_ZONES} precision={1} compact />
+        <Col xs={24} md={12}>
+          <Card title="Load % vs COP — Efficiency Curve" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={loadVsCopOpt} theme={chartTheme} style={{ height: 40 + chillers.length * 34 }} />
           </Card>
         </Col>
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24}>
-          <Card title="Fleet COP Comparison" size="small">
-            <ReactECharts option={copCompareOpt} theme={chartTheme} style={{ height: 40 + chillers.length * 34 }} />
+        <Col xs={24} md={12}>
+          <Card title="Run Hours by Chiller" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={runHoursOpt} theme={chartTheme} style={{ height: 40 + chillers.length * 34 }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="Fleet Health Matrix" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={fleetHeatmapOpt} theme={chartTheme} style={{ height: 40 + chillers.length * 34 }} />
           </Card>
         </Col>
       </Row>
 
-      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
+          <Card title="Cooling Capacity by Chiller" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={coolingCapBarOpt} theme={chartTheme} style={{ height: 260 }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="COP Trend by Chiller (24h)" size="small" style={{ height: '100%' }}>
+            <Row gutter={[12, 12]}>
+              {chillers.map(c => (
+                <Col xs={24} sm={12} key={c.id}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>{c.name}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: ZONE_COLOR[zoneAt(COP_ZONES, c.cop)] }}>{c.cop.toFixed(2)}</div>
+                    </div>
+                    <Sparkline data={windowHistory(c.copHistory, 1)} color={PURPLE} />
+                  </div>
+                </Col>
+              ))}
+            </Row>
+          </Card>
+        </Col>
+      </Row>
+
+      <Card size="small" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           <strong>How cooling capacity is calculated:</strong> there is no separate hardware BTU meter — the FDS's CHW flow meter
           (per chiller, §10.2) plus the supply/return temperature sensors (§10.1) already form one:
@@ -245,7 +385,7 @@ const ChillerPage: React.FC = observer(() => {
   // ── Flows & Hydraulics tab ──────────────────────────────────────────────────
   const flowsTab = (
     <div>
-      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+      <Card size="small" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           Every flow below is a physical CH-AI point per the FDS (§10.2); condenser flow ratio and approach are the
           derived engineering checks used to judge whether the plant is hydraulically healthy.
@@ -344,72 +484,59 @@ const ChillerPage: React.FC = observer(() => {
     </div>
   )
 
-  // ── System Schematic Tab — live P&ID-style flow diagram ────────────────────
-  const CT_COLOR = '#0891b2'
-  const CHW_COLOR = '#7c3aed'
-  const AHU_COLOR = '#1677ff'
-  const totalCtFanKw = chillers.reduce((s, c) => s + c.ctFanKW, 0)
-  const totalCwPumpKw = chillers.reduce((s, c) => s + c.cwPumpKW, 0)
-  const totalChwPumpKw = chillers.reduce((s, c) => s + c.chwPumpKW, 0)
   const avgApproach = chillers.reduce((s, c) => s + c.approach, 0) / chillers.length
-  const avgChwRT = chillers.reduce((s, c) => s + c.chwRT, 0) / chillers.length
-
-  const schematicNodes = [
-    { name: 'Cooling Towers', x: 500, y: 40, symbol: 'roundRect', symbolSize: [240, 60],
-      itemStyle: { color: CT_COLOR }, label: { formatter: `Cooling Towers\nApproach ${avgApproach.toFixed(1)}°C  |  Fans ${totalCtFanKw.toFixed(0)} kW` } },
-    { name: 'CW Pumps', x: 500, y: 150, symbol: 'roundRect', symbolSize: [200, 50],
-      itemStyle: { color: CT_COLOR }, label: { formatter: `CW Pumps\n${totalCwPumpKw.toFixed(0)} kW  |  ${headerCwFlow.toFixed(0)} L/s` } },
-    ...chillers.map((c, i) => ({
-      name: c.id, x: 90 + i * 205, y: 280, symbol: 'roundRect', symbolSize: [175, 75],
-      itemStyle: { color: PURPLE },
-      label: { formatter: `${c.name}\n${c.kw.toFixed(0)} kW  |  COP ${c.cop.toFixed(2)}\n${c.location}` },
-    })),
-    { name: 'CHW Pumps', x: 500, y: 440, symbol: 'roundRect', symbolSize: [200, 50],
-      itemStyle: { color: CHW_COLOR }, label: { formatter: `CHW Pumps\n${totalChwPumpKw.toFixed(0)} kW  |  ${headerChwFlow.toFixed(0)} L/s` } },
-    { name: 'CHW Header', x: 500, y: 590, symbol: 'roundRect', symbolSize: [260, 60],
-      itemStyle: { color: CHW_COLOR }, label: { formatter: `CHW Header\n${avgCHWST.toFixed(1)}°C supply → ${avgChwRT.toFixed(1)}°C return` } },
-    { name: 'AHU Coils', x: 500, y: 740, symbol: 'roundRect', symbolSize: [280, 60],
-      itemStyle: { color: AHU_COLOR }, label: { formatter: `AHU Coils (×${ahu.ahus.length})\n${ahu.totalFanKw.toFixed(0)} kW fans  |  Avg SAT ${ahu.avgSAT.toFixed(1)}°C` } },
-  ]
-  const schematicLinks = [
-    { source: 'Cooling Towers', target: 'CW Pumps', lineStyle: { color: '#999', width: 2 } },
-    ...chillers.map(c => ({ source: 'CW Pumps', target: c.id, lineStyle: { color: '#999', width: 2 } })),
-    ...chillers.map(c => ({ source: c.id, target: 'CHW Pumps', lineStyle: { color: '#999', width: 2 } })),
-    { source: 'CHW Pumps', target: 'CHW Header', lineStyle: { color: '#999', width: 2 } },
-    { source: 'CHW Header', target: 'AHU Coils', lineStyle: { color: '#999', width: 2 } },
-  ]
-  const schematicOpt = {
-    tooltip: { show: false },
-    series: [{
-      type: 'graph' as const, layout: 'none' as const, coordinateSystem: undefined,
-      symbol: 'roundRect', roam: false,
-      label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600, lineHeight: 16 },
-      edgeSymbol: ['none', 'arrow'], edgeSymbolSize: [0, 8],
-      lineStyle: { color: '#999', width: 2, curveness: 0 },
-      data: schematicNodes,
-      links: schematicLinks,
-    }],
-  }
 
   const schematicTab = (
     <div>
-      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Live plant schematic — condenser water loop (cooling towers → CW pumps → chillers) and chilled water
-          loop (chillers → CHW pumps → header → AHU coils). Every figure shown is the real reading from that
-          component, aggregated only where the underlying equipment (cooling towers, pumps, AHU coils) isn't
-          individually named elsewhere.
-        </Text>
-      </Card>
-      <Card title="Chiller Plant — System Schematic">
-        <ReactECharts option={schematicOpt} theme={chartTheme} style={{ height: 820 }} />
-      </Card>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/schematic_chiller_plant_chw.png"
+            alt="Chiller plant chilled water schematic"
+            caption="Chiller plant — chilled water loop schematic"
+            size="large"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="Live Plant Conditions" size="small" style={{ height: '100%' }}>
+            <Row gutter={[12, 12]}>
+              <Col span={12}>
+                <Statistic title="Header CHW Flow" value={headerChwFlow.toFixed(0)} suffix="L/s" valueStyle={{ fontSize: 20 }} />
+                <div style={{ marginTop: 10 }}>
+                  <Statistic title="Header CW Flow" value={headerCwFlow.toFixed(0)} suffix="L/s" valueStyle={{ fontSize: 20 }} />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Statistic title="Ambient Wet-Bulb" value={wetBulb.toFixed(1)} suffix="°C" valueStyle={{ fontSize: 20 }} />
+                </div>
+              </Col>
+              <Col span={12}>
+                <Gauge label="Avg CT Approach" value={avgApproach} min={0} max={12} zones={APPROACH_ZONES} unit="°C" precision={1} height={140} />
+              </Col>
+            </Row>
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(128,128,128,0.2)' }}>
+              <div style={{ fontSize: 12, color: undefined, marginBottom: 4 }}>Flow Consistency Check</div>
+              {coloredText(
+                flowConsistencyErrorPct,
+                buildZones({ min: 0, max: 6, warnHigh: 2, critHigh: 4 }),
+                `${flowConsistencyErrorPct.toFixed(1)}% deviation — Σchiller flow vs header meter`,
+              )}
+            </div>
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(128,128,128,0.2)' }}>
+              <div style={{ fontSize: 12, color: undefined, marginBottom: 8 }}>Cooling Tower Approach by Chiller</div>
+              {chillers.map(c => (
+                <RangeBar key={c.id} label={c.name} value={c.approach} unit="°C" min={0} max={12}
+                  zones={APPROACH_ZONES} precision={1} compact />
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
     </div>
   )
 
   return (
     <div style={{ padding: '24px 28px' }}>
-      <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Chiller Plant</Title>
+      <Title level={3} style={{ marginBottom: 4 }}>Chiller Plant</Title>
       <Paragraph type="secondary" style={{ marginBottom: 20 }}>
         5 water-cooled chillers — T2, T3 &amp; T5 plant rooms. AI setpoints refresh every 5 min.
       </Paragraph>

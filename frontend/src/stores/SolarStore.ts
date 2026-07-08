@@ -83,8 +83,8 @@ export class SolarStore {
       out.push({
         ruleId: 'SOL-001', severity: 'critical', unit: 'Site',
         title: 'Export Limit at Risk',
-        detail: `Solar export = ${this.exportKw.toFixed(0)} kW. Only ${this.headroomKw.toFixed(0)} kW headroom before the ${this.exportLimitKw} kW HAL grid export cap is reached.`,
-        recommendation: 'Curtail generation or increase site load (battery charging, pre-cooling). Alert HAL grid team immediately.',
+        detail: `Solar export = ${this.exportKw.toFixed(0)} kW. Only ${this.headroomKw.toFixed(0)} kW headroom before the ${this.exportLimitKw} kW grid export cap is reached.`,
+        recommendation: 'Curtail generation or increase site load (battery charging, pre-cooling). Alert the grid team immediately.',
         triggerValue: `Headroom = ${this.headroomKw.toFixed(0)} kW`,
       })
     }

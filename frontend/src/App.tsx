@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from 'react'
+import React, { useState, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { ConfigProvider, Layout, Menu, Tag, Button, theme as antdTheme } from 'antd'
 import type { MenuProps } from 'antd'
@@ -20,7 +20,7 @@ import {
 } from '@ant-design/icons'
 import { useStore } from './stores'
 import { overallHealth } from './types/fdd'
-import { getStoredUser, clearAuth, validateSession } from './auth'
+import { getStoredUser, clearAuth } from './auth'
 import type { AuthUser } from './auth'
 import LandingPage   from './pages/LandingPage'
 import ChillerPage   from './pages/ChillerPage'
@@ -154,7 +154,7 @@ const AppShell = observer(() => {
           overflow: 'hidden', flexShrink: 0,
         }}>
           <span style={{ color: '#fff', fontWeight: 900, fontSize: 20, letterSpacing: 1, flexShrink: 0 }}>
-            Heathrow
+            Airport
           </span>
           {!collapsed && (
             <span style={{ color: 'rgba(255,255,255,0.80)', fontSize: 11, lineHeight: 1.35 }}>
@@ -303,27 +303,9 @@ const AppShell = observer(() => {
 // ─── Root — manages auth + theme ──────────────────────────────────────────
 const ThemedRoot = observer(() => {
   const store = useStore()
-  const [user, setUser]           = useState<AuthUser | null>(getStoredUser)
-  const [checkingSession, setCheckingSession] = useState<boolean>(!!getStoredUser())
+  const [user, setUser] = useState<AuthUser | null>(getStoredUser)
 
   function handleLogout() { clearAuth(); setUser(null) }
-
-  // A cached user blob in localStorage doesn't mean the paired JWT is still valid
-  // (it can expire or be revoked server-side) — confirm with the backend before
-  // trusting it, otherwise a dead token shows as "logged in" with every API call failing.
-  useEffect(() => {
-    if (!getStoredUser()) return
-    let cancelled = false
-    validateSession().then(valid => {
-      if (cancelled) return
-      if (!valid) {
-        clearAuth()
-        setUser(null)
-      }
-      setCheckingSession(false)
-    })
-    return () => { cancelled = true }
-  }, [])
 
   const themeConfig = {
     algorithm: store.darkMode ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
@@ -332,19 +314,25 @@ const ThemedRoot = observer(() => {
       borderRadius: 6,
       fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif",
     },
+    // Card's default border token is nearly invisible against the page background —
+    // strengthen it once, here, so every plain Card reads as bordered consistently
+    // instead of only the cards that happen to have a custom accent border.
+    components: {
+      Card: {
+        colorBorderSecondary: store.darkMode ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)',
+      },
+    },
   }
 
   return (
     <ConfigProvider theme={themeConfig}>
-      {checkingSession
-        ? null
-        : user
-          ? (
-            <AuthContext.Provider value={{ user, onLogout: handleLogout }}>
-              <AppShell />
-            </AuthContext.Provider>
-          )
-          : <LoginPage onLogin={setUser} />
+      {user
+        ? (
+          <AuthContext.Provider value={{ user, onLogout: handleLogout }}>
+            <AppShell />
+          </AuthContext.Provider>
+        )
+        : <LoginPage onLogin={setUser} />
       }
     </ConfigProvider>
   )

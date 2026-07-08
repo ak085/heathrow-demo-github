@@ -302,8 +302,7 @@ FDD Summary tab:
 2. Run: docker compose up -d
 3. Test: curl -s -o /dev/null -w "%{http_code}" http://localhost:8030
 4. Init git: git init && git add . && git commit -m "initial: heathrow-demo scaffold — 5-page energy intelligence demo"
-5. Create Gitea repo via API: curl -X POST http://10.0.10.24:30008/api/v1/user/repos -H "Content-Type: application/json" -u ak101:ubnt.101 -d '{"name":"heathrow-demo","private":false}'
-6. Push: git remote add origin http://ak101:ubnt.101@10.0.10.24:30008/ak101/heathrow-demo.git && git push -u origin main
+5. Push to GitHub: git remote add origin https://github.com/ak085/heathrow-demo-github.git && git push -u origin master (auth via PAT in ~/.git-credentials)
 
 ## Reference: data patterns
 ```typescript

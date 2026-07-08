@@ -6,7 +6,7 @@ import {
 import {
   TeamOutlined, PlusOutlined, KeyOutlined, DeleteOutlined,
 } from '@ant-design/icons'
-import { authorizedFetch } from '../auth'
+import { authHeaders, getStoredUser } from '../auth'
 
 const { Title, Text } = Typography
 
@@ -27,6 +27,7 @@ interface AddFormValues {
 }
 
 const UsersPage: React.FC = () => {
+  const currentUser = getStoredUser()
   const [users,    setUsers   ] = useState<User[]>([])
   const [loading,  setLoading ] = useState(false)
   const [addForm]               = Form.useForm<AddFormValues>()
@@ -38,7 +39,7 @@ const UsersPage: React.FC = () => {
   async function fetchUsers() {
     setLoading(true)
     try {
-      const res = await authorizedFetch('/api/users')
+      const res = await fetch('/api/users', { headers: authHeaders() })
       if (!res.ok) throw new Error('Failed to load')
       setUsers(await res.json())
     } catch {
@@ -52,9 +53,9 @@ const UsersPage: React.FC = () => {
 
   async function addUser(values: AddFormValues) {
     try {
-      const res = await authorizedFetch('/api/users', {
+      const res = await fetch('/api/users', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body:    JSON.stringify(values),
       })
       if (!res.ok) {
@@ -71,9 +72,9 @@ const UsersPage: React.FC = () => {
 
   async function toggleEnabled(id: number, enabled: boolean) {
     try {
-      const res = await authorizedFetch(`/api/users/${id}`, {
+      const res = await fetch(`/api/users/${id}`, {
         method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body:    JSON.stringify({ enabled }),
       })
       if (!res.ok) throw new Error('Failed')
@@ -86,7 +87,7 @@ const UsersPage: React.FC = () => {
 
   async function deleteUser(id: number, username: string) {
     try {
-      const res = await authorizedFetch(`/api/users/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/users/${id}`, { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) {
         const err = await res.json()
         throw new Error((err as { detail?: string }).detail || 'Failed')
@@ -104,9 +105,9 @@ const UsersPage: React.FC = () => {
       return
     }
     try {
-      const res = await authorizedFetch(`/api/users/${resetModal.userId}/reset-password`, {
+      const res = await fetch(`/api/users/${resetModal.userId}/reset-password`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body:    JSON.stringify({ new_password: newPw }),
       })
       if (!res.ok) throw new Error('Failed')
@@ -116,13 +117,6 @@ const UsersPage: React.FC = () => {
     } catch {
       message.error('Failed to reset password')
     }
-  }
-
-  // Disable disable/delete only for whichever admin account is currently the sole
-  // active admin — otherwise a user could lock every admin out of the Users page.
-  const activeAdminCount = users.filter(u => u.role === 'admin' && u.enabled).length
-  function isLastActiveAdmin(u: User): boolean {
-    return u.role === 'admin' && u.enabled && activeAdminCount <= 1
   }
 
   const columns = [
@@ -145,7 +139,7 @@ const UsersPage: React.FC = () => {
         <Switch
           size="small"
           checked={v}
-          disabled={isLastActiveAdmin(u)}
+          disabled={u.username === currentUser?.username}
           onChange={(en) => toggleEnabled(u.id, en)}
         />
       ),
@@ -171,11 +165,11 @@ const UsersPage: React.FC = () => {
             description="This action cannot be undone."
             onConfirm={() => deleteUser(u.id, u.username)}
             okText="Delete" cancelText="Cancel" okType="danger"
-            disabled={isLastActiveAdmin(u)}
+            disabled={u.username === currentUser?.username}
           >
             <Button
               size="small" danger icon={<DeleteOutlined />}
-              disabled={isLastActiveAdmin(u)}
+              disabled={u.username === currentUser?.username}
             >
               Delete
             </Button>
@@ -217,7 +211,7 @@ const UsersPage: React.FC = () => {
               loading={loading}
             />
             <Text type="secondary" style={{ fontSize: 11, marginTop: 10, display: 'block' }}>
-              The last remaining active admin account cannot be deleted or disabled.
+              You cannot delete or disable your own account.
               Viewer accounts can access all equipment pages but not this Users page.
             </Text>
           </Card>

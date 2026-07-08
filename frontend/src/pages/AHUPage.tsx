@@ -5,8 +5,11 @@ import ReactECharts from 'echarts-for-react'
 import { useStore } from '../stores'
 import { FDDPanel } from '../components/FDDPanel'
 import { RangeBar, buildZones, zoneAt, ZONE_COLOR } from '../components/RangeBar'
+import { Gauge } from '../components/Gauge'
 import { Sparkline } from '../components/Sparkline'
 import { TimelineSwitch, type TimelineDays } from '../components/TimelineSwitch'
+import PageHeroImage from '../components/PageHeroImage'
+import { FlashValue } from '../components/FlashValue'
 import { useEchartsTheme } from '../theme/echartsTheme'
 import { windowHistory, timeLabels, labelInterval, dayMarkLine } from '../utils/history'
 import type { AHU } from '../stores/AHUStore'
@@ -75,6 +78,85 @@ const AHUPage: React.FC = observer(() => {
     }],
   }
 
+  // CHW valve position vs SAT deviation — shows how hard each valve is working to correct temperature error.
+  const valveVsSatOpt = {
+    tooltip: {
+      trigger: 'item' as const,
+      formatter: (p: any) => `${p.data[2]}<br/>Valve ${p.data[0].toFixed(0)}%  |  SAT dev ${p.data[1].toFixed(1)}°C`,
+    },
+    grid: { left: 50, right: 20, top: 16, bottom: 34 },
+    xAxis: { type: 'value' as const, name: 'CHW Valve %', min: 0, max: 100, nameLocation: 'middle' as const, nameGap: 26 },
+    yAxis: { type: 'value' as const, name: 'SAT dev °C', min: 0, max: 3 },
+    series: [{
+      type: 'scatter' as const,
+      symbolSize: 16,
+      data: ahus.map(a => [Math.round(a.chwValve), Number(Math.abs(a.sat - a.satSP).toFixed(1)), a.name]),
+      itemStyle: { color: (p: any) => p.data[1] > 2 ? ZONE_COLOR.critical : p.data[1] > 1 ? ZONE_COLOR.warning : ZONE_COLOR.ok },
+    }],
+  }
+
+  // Fan power — vertical column chart (orientation variety).
+  const fanPowerBarOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 50, right: 20, top: 34, bottom: 50 },
+    xAxis: { type: 'category' as const, data: ahus.map(a => a.name), axisLabel: { rotate: 40, fontSize: 10 } },
+    yAxis: { type: 'value' as const, name: 'kW', nameGap: 14 },
+    series: [{
+      type: 'bar' as const,
+      data: ahus.map(a => ({ value: Number(a.fanKW.toFixed(1)), itemStyle: { color: PURPLE } })),
+      barWidth: '55%',
+      label: { show: true, position: 'top' as const, fontSize: 9 },
+    }],
+  }
+
+  // Fleet health matrix heatmap — SAT dev / CO2 / Filter DP / Fan Speed normalised 0-100 (green = good).
+  const ahuHeatmapMetrics = ['SAT Dev', 'CO₂', 'Filter DP', 'Fan Speed'] as const
+  function ahuHeatmapScore(a: AHU, metric: typeof ahuHeatmapMetrics[number]): number {
+    if (metric === 'SAT Dev') return 100 - Math.min(100, Math.abs(a.sat - a.satSP) / 3 * 100)
+    if (metric === 'CO₂') return a.type === 'control-station' ? 100 - Math.min(100, Math.max(0, (a.co2 - 400) / 700 * 100)) : 100
+    if (metric === 'Filter DP') return 100 - Math.min(100, Math.max(0, (a.filterDP - 70) / (240 - 70) * 100))
+    return 100 - Math.abs(a.fanSpeed - 70)
+  }
+  const ahuHeatmapData: [number, number, number][] = []
+  ahus.forEach((a, ai) => {
+    ahuHeatmapMetrics.forEach((m, mi) => {
+      ahuHeatmapData.push([mi, ai, Math.round(ahuHeatmapScore(a, m))])
+    })
+  })
+  const ahuHeatmapOpt = {
+    tooltip: {
+      position: 'top' as const,
+      formatter: (p: any) => `${ahus[p.data[1]].name} — ${ahuHeatmapMetrics[p.data[0]]}: ${p.data[2]}`,
+    },
+    grid: { left: 80, right: 20, top: 10, bottom: 30 },
+    xAxis: { type: 'category' as const, data: ahuHeatmapMetrics, splitArea: { show: true } },
+    yAxis: { type: 'category' as const, data: ahus.map(a => a.name), splitArea: { show: true } },
+    visualMap: { min: 0, max: 100, show: false, inRange: { color: ['#cf1322', '#faad14', '#52c41a'] } },
+    series: [{
+      type: 'heatmap' as const,
+      data: ahuHeatmapData,
+      label: { show: true, fontSize: 9, formatter: (p: any) => p.data[2] },
+    }],
+  }
+
+  // Filter DP ranking — maintenance-relevant, sorted dirtiest first.
+  const filterDpSorted = [...ahus].sort((a, b) => b.filterDP - a.filterDP)
+  const filterDpOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 80, right: 30, top: 10, bottom: 20 },
+    xAxis: { type: 'value' as const, name: 'Pa' },
+    yAxis: { type: 'category' as const, data: filterDpSorted.map(a => a.name), inverse: true },
+    series: [{
+      type: 'bar' as const,
+      data: filterDpSorted.map(a => ({
+        value: Math.round(a.filterDP),
+        itemStyle: { color: a.filterDP > 200 ? '#cf1322' : a.filterDP > 150 ? '#faad14' : '#13a8a8' },
+      })),
+      barWidth: 12,
+      label: { show: true, position: 'right' as const, fontSize: 10 },
+    }],
+  }
+
   const expandedRow = (a: AHU) => (
     <Row gutter={24}>
       <Col xs={24} md={12}>
@@ -95,7 +177,7 @@ const AHUPage: React.FC = observer(() => {
         ) : (
           <Text type="secondary" style={{ fontSize: 12 }}>No CO₂ / fresh-air fan — electrical rooms have fixed 27°C setpoint, no occupancy-driven ventilation (FDS Table 9).</Text>
         )}
-        <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 8 }}>
+        <div style={{ fontSize: 12, color: undefined, marginTop: 8 }}>
           HVLS: <strong>{a.hvlsOn ? `ON — fixed ${a.hvlsFixedSpeed}%` : 'OFF'}</strong> &nbsp;|&nbsp;
           Fan kW: <strong>{a.fanKW.toFixed(1)}</strong> &nbsp;|&nbsp;
           Filter DP: {coloredText(a.filterDP, FILTER_DP_ZONES, `${a.filterDP.toFixed(0)} Pa`)}
@@ -108,43 +190,97 @@ const AHUPage: React.FC = observer(() => {
   const overviewTab = (
     <div>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={5}>
-          <Card style={{ height: '100%', textAlign: 'center', background: 'rgba(90,0,87,0.05)', border: '1px solid rgba(90,0,87,0.2)' }}>
-            <Statistic title="AHUs Normal" value={`${normalCount}/${ahus.length}`}
-              valueStyle={{ color: PURPLE, fontWeight: 700, fontSize: 26 }} />
-            <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 8 }}>Filter alerts: <strong>{filterAlerts}</strong></div>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/ahu_3d_ec_fans_cutaway.png"
+            alt="AHU EC fan array cutaway"
+            caption="EC plug fan array — Terminal AHU plant room"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%', textAlign: 'center', border: '1px solid rgba(90,0,87,0.35)' }}>
+                <Statistic title="AHUs Normal" value={`${normalCount}/${ahus.length}`}
+                  valueStyle={{ color: undefined, fontWeight: 700, fontSize: 26 }} />
+                <div style={{ fontSize: 11, color: undefined, marginTop: 8 }}>Filter alerts: <strong>{filterAlerts}</strong></div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} title="Fleet Averages" bodyStyle={{ paddingBottom: 4 }}>
+                <RangeBar label="Avg Supply Air Temp" value={avgSAT} unit="°C" min={11} max={19} zones={SAT_ZONES} precision={1} compact />
+                <RangeBar label="Avg Zone Temp" value={avgZoneT} unit="°C" min={21} max={30} zones={ZONE_TEMP_ZONES} precision={1} compact />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} bodyStyle={{ paddingBottom: 4 }} title="Avg CO₂ (CS units)">
+                <RangeBar label="" value={avgCO2} unit=" ppm" min={350} max={1150} zones={CO2_ZONES} precision={0} />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
+                <div style={{ fontSize: 11, color: undefined }}>Total Fan Power</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: undefined, marginBottom: 6 }}><FlashValue value={totalFanKw}>{totalFanKw.toFixed(1)} kW</FlashValue></div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <ReactECharts option={powerBreakdownOpt} theme={chartTheme} style={{ width: 70, height: 70, flexShrink: 0 }} />
+                  <div style={{ marginLeft: 8 }}>
+                    <div style={{ fontSize: 11 }}><span style={{ color: PURPLE }}>■</span> EC Fans {fanKwSum.toFixed(1)}</div>
+                    <div style={{ fontSize: 11 }}><span style={{ color: '#1677ff' }}>■</span> Fresh Air {freshAirKwSum.toFixed(1)}</div>
+                  </div>
+                </div>
+              </Card>
+            </Col>
+          </Row>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
+          <Card title="Zone Temperature by AHU" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={zoneTempCompareOpt} theme={chartTheme} style={{ height: 40 + ahus.length * 30 }} />
           </Card>
         </Col>
-        <Col xs={24} md={6}>
-          <Card style={{ height: '100%' }} title="Fleet Averages" bodyStyle={{ paddingBottom: 4 }}>
-            <RangeBar label="Avg Supply Air Temp" value={avgSAT} unit="°C" min={11} max={19} zones={SAT_ZONES} precision={1} compact />
-            <RangeBar label="Avg Zone Temp" value={avgZoneT} unit="°C" min={21} max={30} zones={ZONE_TEMP_ZONES} precision={1} compact />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card style={{ height: '100%' }} bodyStyle={{ paddingBottom: 4 }} title="Avg CO₂ (Control Station)">
-            <RangeBar label="" value={avgCO2} unit=" ppm" min={350} max={1150} zones={CO2_ZONES} precision={0} />
-          </Card>
-        </Col>
-        <Col xs={24} md={7}>
-          <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <ReactECharts option={powerBreakdownOpt} theme={chartTheme} style={{ width: 90, height: 90, flexShrink: 0 }} />
-              <div style={{ marginLeft: 8 }}>
-                <div style={{ fontSize: 11, color: '#8c8c8c' }}>Total Fan Power</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: PURPLE }}>{totalFanKw.toFixed(1)} kW</div>
-                <div style={{ fontSize: 11, marginTop: 4 }}><span style={{ color: PURPLE }}>■</span> EC Fans {fanKwSum.toFixed(1)}</div>
-                <div style={{ fontSize: 11 }}><span style={{ color: '#1677ff' }}>■</span> Fresh Air {freshAirKwSum.toFixed(1)}</div>
-              </div>
-            </div>
+        <Col xs={24} md={12}>
+          <Card title="CHW Valve % vs SAT Deviation" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={valveVsSatOpt} theme={chartTheme} style={{ height: 40 + ahus.length * 30 }} />
           </Card>
         </Col>
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24}>
-          <Card title="Zone Temperature by AHU" size="small">
-            <ReactECharts option={zoneTempCompareOpt} theme={chartTheme} style={{ height: 40 + ahus.length * 30 }} />
+        <Col xs={24} md={12}>
+          <Card title="Fan Power by AHU" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={fanPowerBarOpt} theme={chartTheme} style={{ height: 280 }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="Fleet Health Matrix" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={ahuHeatmapOpt} theme={chartTheme} style={{ height: 280 }} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
+          <Card title="Filter DP — Ranked" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={filterDpOpt} theme={chartTheme} style={{ height: 40 + ahus.length * 30 }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="Fresh Air Fan Speed (24h)" size="small" style={{ height: '100%' }}>
+            <Row gutter={[12, 12]}>
+              {csUnits.map(a => (
+                <Col xs={24} sm={12} key={a.id}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>{a.name}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#1677ff' }}>{a.freshAirSpeed.toFixed(0)}%</div>
+                    </div>
+                    <Sparkline data={windowHistory(a.freshAirHistory, 1)} color="#1677ff" />
+                  </div>
+                </Col>
+              ))}
+            </Row>
           </Card>
         </Col>
       </Row>
@@ -182,7 +318,7 @@ const AHUPage: React.FC = observer(() => {
   // ── Ventilation & IAQ tab ────────────────────────────────────────────────────
   const ventTab = (
     <div>
-      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+      <Card size="small" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           CO₂-driven fresh air control applies to Control Station units only (§4.2) — Electrical Rooms have no
           occupancy-driven ventilation and are excluded below. HVLS station fans are switched ON/OFF by the AI only;
@@ -276,69 +412,52 @@ const AHUPage: React.FC = observer(() => {
     </div>
   )
 
-  // ── System Schematic Tab — live airflow process diagram ────────────────────
-  // A single representative flow (fleet-average values) for the more complex control-station
-  // type (8 of 10 units) — electrical-room units skip the fresh-air/CO2 stages, noted below.
-  const avgFilterDP = ahus.reduce((s, a) => s + a.filterDP, 0) / ahus.length
-  const avgChwValve = ahus.reduce((s, a) => s + a.chwValve, 0) / ahus.length
-  const avgFanSpeed = ahus.reduce((s, a) => s + a.fanSpeed, 0) / ahus.length
   const avgFreshAirSpeedCS = csUnits.reduce((s, a) => s + a.freshAirSpeed, 0) / csUnits.length
-
-  const OA_COLOR = '#1677ff'
-  const FILTER_COLOR = '#faad14'
-  const COIL_COLOR = '#7c3aed'
-  const FAN_COLOR = PURPLE
-  const ZONE_COLOR_SCHEMATIC = '#52c41a'
-
-  const ahuSchematicNodes = [
-    { name: 'Outside Air Intake', x: 130, y: 150, symbol: 'roundRect', symbolSize: [230, 90],
-      itemStyle: { color: OA_COLOR }, label: { formatter: `Outside Air Intake\nDamper ${avgFreshAirSpeedCS.toFixed(0)}%  |  Fans ${freshAirKwSum.toFixed(0)} kW\n(control-station units)` } },
-    { name: 'Filter', x: 400, y: 150, symbol: 'roundRect', symbolSize: [180, 90],
-      itemStyle: { color: FILTER_COLOR }, label: { formatter: `Filter\nAvg DP ${avgFilterDP.toFixed(0)} Pa\n${filterAlerts} unit(s) elevated` } },
-    { name: 'Cooling Coil (CHW)', x: 650, y: 150, symbol: 'roundRect', symbolSize: [220, 90],
-      itemStyle: { color: COIL_COLOR }, label: { formatter: `Cooling Coil (CHW)\nValve ${avgChwValve.toFixed(0)}% open\nFed from Chiller Plant CHW header` } },
-    { name: 'Supply Fan', x: 900, y: 150, symbol: 'roundRect', symbolSize: [200, 90],
-      itemStyle: { color: FAN_COLOR }, label: { formatter: `Supply Fan (EC)\n${avgFanSpeed.toFixed(0)}% speed\n${fanKwSum.toFixed(0)} kW total` } },
-    { name: 'Discharge → Zone', x: 1150, y: 150, symbol: 'roundRect', symbolSize: [240, 90],
-      itemStyle: { color: ZONE_COLOR_SCHEMATIC }, label: { formatter: `Discharge → Zone\nSAT ${avgSAT.toFixed(1)}°C  |  Zone ${avgZoneT.toFixed(1)}°C\nCO₂ ${avgCO2.toFixed(0)} ppm (CS units)` } },
-  ]
-  const ahuSchematicLinks = [
-    { source: 'Outside Air Intake', target: 'Filter', lineStyle: { color: '#999', width: 2 } },
-    { source: 'Filter', target: 'Cooling Coil (CHW)', lineStyle: { color: '#999', width: 2 } },
-    { source: 'Cooling Coil (CHW)', target: 'Supply Fan', lineStyle: { color: '#999', width: 2 } },
-    { source: 'Supply Fan', target: 'Discharge → Zone', lineStyle: { color: '#999', width: 2 } },
-  ]
-  const ahuSchematicOpt = {
-    tooltip: { show: false },
-    series: [{
-      type: 'graph' as const, layout: 'none' as const,
-      symbol: 'roundRect', roam: false,
-      label: { show: true, color: '#fff', fontSize: 12, fontWeight: 600, lineHeight: 16 },
-      edgeSymbol: ['none', 'arrow'], edgeSymbolSize: [0, 8],
-      lineStyle: { color: '#999', width: 2, curveness: 0 },
-      data: ahuSchematicNodes,
-      links: ahuSchematicLinks,
-    }],
-  }
+  const avgFilterDP = ahus.reduce((s, a) => s + a.filterDP, 0) / ahus.length
 
   const schematicTab = (
     <div>
-      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Live airflow schematic for a typical control-station AHU (8 of 10 units) — outside air → filter →
-          cooling coil → supply fan → zone. Values are fleet averages across all 10 units unless noted; the 2
-          electrical-room units skip the fresh-air/CO₂ stages and run to a fixed 27°C zone setpoint instead.
-        </Text>
-      </Card>
-      <Card title="AHUs — System Schematic">
-        <ReactECharts option={ahuSchematicOpt} theme={chartTheme} style={{ height: 340 }} />
-      </Card>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/schematic_ahu_control.png"
+            alt="AHU control schematic"
+            caption="Air handling unit — control schematic"
+            size="large"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="Live Ventilation Conditions" size="small" style={{ height: '100%' }}>
+            <Row gutter={[12, 12]}>
+              <Col span={12}>
+                <Gauge label="Avg Filter DP" value={avgFilterDP} min={70} max={240} zones={FILTER_DP_ZONES} unit=" Pa" precision={0} height={140} />
+              </Col>
+              <Col span={12}>
+                <Statistic title="Avg Fresh Air Speed" value={avgFreshAirSpeedCS.toFixed(0)} suffix="%" valueStyle={{ fontSize: 20 }} />
+                <div style={{ marginTop: 10 }}>
+                  <Statistic title="Total Fan Power" value={totalFanKw.toFixed(0)} suffix="kW" valueStyle={{ fontSize: 20 }} />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Statistic title="Filter Alerts" value={filterAlerts} valueStyle={{ fontSize: 20, color: filterAlerts > 0 ? '#faad14' : undefined }} />
+                </div>
+              </Col>
+            </Row>
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(128,128,128,0.2)' }}>
+              <div style={{ fontSize: 12, color: undefined, marginBottom: 8 }}>Supply Air Temp vs Setpoint by Unit</div>
+              {ahus.map(a => (
+                <RangeBar key={a.id} label={a.name} value={a.sat} unit="°C" min={11} max={19}
+                  zones={SAT_ZONES} target={a.satSP} precision={1} compact />
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
     </div>
   )
 
   return (
     <div style={{ padding: '24px 28px' }}>
-      <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Air Handling Units</Title>
+      <Title level={3} style={{ color: undefined, marginBottom: 4 }}>Air Handling Units</Title>
       <Paragraph type="secondary" style={{ marginBottom: 20 }}>
         10 AHUs — T1, T2, T3 &amp; T5 (8 Control Station + 2 Electrical Room per FDS Table 9). AI setpoints refresh every 5 min.
       </Paragraph>

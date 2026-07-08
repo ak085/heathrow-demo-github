@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons'
 import { useStore } from '../stores'
 import { overallHealth } from '../types/fdd'
+import PageHeroImage from '../components/PageHeroImage'
 
 const { Title, Paragraph, Text } = Typography
 const PURPLE = '#5a0057'
@@ -33,12 +34,13 @@ const LandingPage: React.FC = observer(() => {
   const hTenant   = overallHealth(tenant.allFindings)
   const hLighting = overallHealth(lighting.allFindings)
 
+  // tagColor uses Ant Design's own preset Tag colors — these are already designed to
+  // read correctly in both light and dark themes, so no custom background/text logic needed.
   const TILES = [
     {
       key: 'chiller', path: '/chiller', health: hChiller,
       icon: <ThunderboltOutlined style={{ fontSize: 36, color: PURPLE }} />,
-      iconBg: 'rgba(90,0,87,0.12)', cardBg: 'rgba(90,0,87,0.04)',
-      border: PURPLE,
+      border: PURPLE, tagColor: 'purple',
       title: 'Chiller Plant',
       subtitle: '5 Water-Cooled Chillers — T2, T3 & T5 Plant Rooms',
       tag: '5 Chillers',
@@ -50,8 +52,7 @@ const LandingPage: React.FC = observer(() => {
     {
       key: 'ahu', path: '/ahu', health: hAHU,
       icon: <CloudOutlined style={{ fontSize: 36, color: '#1677ff' }} />,
-      iconBg: '#e6f4ff', cardBg: '#f0f8ff',
-      border: '#1677ff',
+      border: '#1677ff', tagColor: 'blue',
       title: 'AHUs',
       subtitle: '10 Air Handling Units — T1 / T2 / T3 / T5',
       tag: '10 AHUs',
@@ -63,8 +64,7 @@ const LandingPage: React.FC = observer(() => {
     {
       key: 'power', path: '/power', health: hPower,
       icon: <BankOutlined style={{ fontSize: 42, color: PURPLE }} />,
-      iconBg: 'rgba(90,0,87,0.15)', cardBg: 'rgba(90,0,87,0.06)',
-      border: PURPLE,
+      border: PURPLE, tagColor: 'purple',
       title: 'Power & Grid',
       subtitle: '4 Substations — Demand, Power Factor & Sub-Meters',
       tag: '4 Substations',
@@ -76,8 +76,7 @@ const LandingPage: React.FC = observer(() => {
     {
       key: 'solar', path: '/solar', health: hSolar,
       icon: <SunOutlined style={{ fontSize: 36, color: '#f59e0b' }} />,
-      iconBg: '#fef3c7', cardBg: '#fffbeb',
-      border: '#f59e0b',
+      border: '#f59e0b', tagColor: 'gold',
       title: 'Solar & Export',
       subtitle: 'Embedded Generation — Export Limit Management',
       tag: '800 kW Peak',
@@ -89,8 +88,7 @@ const LandingPage: React.FC = observer(() => {
     {
       key: 'savings', path: '/savings', health: hSavings,
       icon: <RiseOutlined style={{ fontSize: 36, color: '#16a34a' }} />,
-      iconBg: '#dcfce7', cardBg: '#f0fdf4',
-      border: '#16a34a',
+      border: '#16a34a', tagColor: 'green',
       title: 'Energy Savings',
       subtitle: 'AI Optimisation Impact — Baseline vs Actual',
       tag: 'AI Active',
@@ -102,8 +100,7 @@ const LandingPage: React.FC = observer(() => {
     {
       key: 'tenant', path: '/tenant', health: hTenant,
       icon: <ShopOutlined style={{ fontSize: 36, color: '#0891b2' }} />,
-      iconBg: '#cffafe', cardBg: '#ecfeff',
-      border: '#0891b2',
+      border: '#0891b2', tagColor: 'cyan',
       title: 'Tenant Billing',
       subtitle: 'Commercial Loss — Meter Anomaly Detection',
       tag: '20-Meter Sample',
@@ -115,8 +112,7 @@ const LandingPage: React.FC = observer(() => {
     {
       key: 'lighting', path: '/lighting', health: hLighting,
       icon: <BulbOutlined style={{ fontSize: 36, color: '#65a30d' }} />,
-      iconBg: '#ecfccb', cardBg: '#f7fee7',
-      border: '#65a30d',
+      border: '#65a30d', tagColor: 'lime',
       title: 'Lighting Monitoring',
       subtitle: 'DALI Dimming — 10 Zones, T1/T2/T3/T5 & Landside',
       tag: `${lighting.zones.length} Zones`,
@@ -129,17 +125,23 @@ const LandingPage: React.FC = observer(() => {
 
   return (
     <div style={{ padding: '36px 32px', maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+        <div style={{ width: '100%', maxWidth: 980 }}>
+          <PageHeroImage
+            src="/assets/heathrow_dashboard_landing_page.png"
+            alt="Airport Energy Intelligence dashboard"
+            caption="Airport Energy Intelligence — Terminal overview"
+            size="large"
+          />
+        </div>
+      </div>
       {/* Header */}
       <div style={{ marginBottom: 40, textAlign: 'center' }}>
-        <Tag style={{
-          fontSize: 11, letterSpacing: 1, marginBottom: 12,
-          background: 'rgba(90,0,87,0.1)', color: PURPLE,
-          border: `1px solid rgba(90,0,87,0.3)`,
-        }}>
-          AiHVAC Platform — Terminal Energy Management
+        <Tag color="purple" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>
+          Energy Intelligence Platform — Terminal Energy Management
         </Tag>
-        <Title level={2} style={{ marginBottom: 6, color: PURPLE }}>
-          Heathrow Energy Intelligence
+        <Title level={2} style={{ marginBottom: 6 }}>
+          Airport Energy Intelligence
         </Title>
         <Paragraph type="secondary" style={{ fontSize: 15, maxWidth: 560, margin: '0 auto' }}>
           Live AI optimisation across chiller plant, AHUs, power substations, and solar generation.
@@ -160,38 +162,23 @@ const LandingPage: React.FC = observer(() => {
               onClick={() => navigate(tile.path)}
               style={{
                 borderRadius: 12,
-                background: tile.cardBg,
                 border: tile.health === 'critical' ? `2px solid #cf1322`
                   : tile.health === 'warning'  ? `2px solid #d48806`
-                  : tile.prominent             ? `2px solid ${tile.border}`
-                  : `1px solid rgba(0,0,0,0.10)`,
+                  : `1px solid ${tile.border}`,
                 cursor: 'pointer',
                 height: '100%',
-                boxShadow: tile.prominent ? '0 4px 20px rgba(90,0,87,0.15)' : undefined,
               }}
               styles={{ body: { padding: tile.prominent ? 28 : 22 } }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{
-                  width: tile.prominent ? 68 : 56,
-                  height: tile.prominent ? 68 : 56,
-                  borderRadius: 14, background: tile.iconBg,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: 14, flexShrink: 0,
-                }}>
-                  {tile.icon}
-                </div>
+                {tile.icon}
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{
-                    fontSize: tile.prominent ? 22 : 18,
-                    fontWeight: 700,
-                    color: tile.prominent ? PURPLE : '#1a1a1a',
-                  }}>{tile.stat}</div>
-                  <div style={{ fontSize: 11, color: '#888' }}>{tile.statLabel}</div>
+                  <div style={{ fontSize: tile.prominent ? 22 : 18, fontWeight: 700 }}>{tile.stat}</div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>{tile.statLabel}</Text>
                 </div>
               </div>
 
-              <div style={{ marginBottom: 6 }}>
+              <div style={{ margin: '10px 0 6px' }}>
                 <HealthPill health={tile.health} />
                 {tile.findings.filter(f => f.severity === 'critical').length > 0 && (
                   <Text style={{ fontSize: 11, color: '#cf1322', marginLeft: 4 }}>
@@ -205,12 +192,7 @@ const LandingPage: React.FC = observer(() => {
                 )}
               </div>
 
-              <Tag style={{
-                marginBottom: 8, fontSize: 11,
-                background: tile.prominent ? PURPLE : 'rgba(0,0,0,0.06)',
-                color: tile.prominent ? '#fff' : '#333',
-                border: 'none',
-              }}>{tile.tag}</Tag>
+              <Tag color={tile.tagColor} style={{ marginBottom: 8, fontSize: 11 }}>{tile.tag}</Tag>
 
               <Title level={tile.prominent ? 3 : 4} style={{ marginBottom: 3, marginTop: 0 }}>
                 {tile.title}

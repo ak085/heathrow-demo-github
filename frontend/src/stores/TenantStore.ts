@@ -54,7 +54,7 @@ const DEFS: { id: string; name: string; zone: string; category: TenantCategory; 
   { id: 'TEN-15', name: 'Menzies Aviation Unit 2',zone: 'Cargo Village',    category: 'Cargo',  meteringType: 'manual' },
   { id: 'TEN-16', name: 'BA Admin Office T5',     zone: 'T5 Satellite',     category: 'Office', meteringType: 'manual' },
   { id: 'TEN-17', name: 'Virgin Atlantic Office T3', zone: 'T3 Main Hall',  category: 'Office', meteringType: 'manual' },
-  { id: 'TEN-18', name: 'HAL Terminal Ops T1',    zone: 'T1 Arrivals Hall',category: 'Office',  meteringType: 'manual' },
+  { id: 'TEN-18', name: 'Airport Terminal Ops T1',    zone: 'T1 Arrivals Hall',category: 'Office',  meteringType: 'manual' },
   { id: 'TEN-19', name: 'Border Force Office T2', zone: 'T2 Baggage Hall', category: 'Office',  meteringType: 'manual' },
   { id: 'TEN-20', name: 'Aviation Security T5',   zone: 'T5 Satellite',    category: 'Office',  meteringType: 'manual' },
 ]

@@ -84,6 +84,9 @@ module.exports = (env, argv) => ({
     port: 3000,
     historyApiFallback: true,
     hot: true,
+    static: {
+      directory: path.resolve(__dirname, "public"),
+    },
   },
   performance: {
     hints: argv.mode === "production" ? "warning" : false,

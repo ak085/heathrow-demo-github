@@ -49,7 +49,7 @@ const LoginPage: React.FC<Props> = ({ onLogin }) => {
             marginBottom: 18,
           }}>
             <span style={{ color: '#fff', fontWeight: 900, fontSize: 22, letterSpacing: 1 }}>
-              Heathrow
+              Airport
             </span>
             <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12, lineHeight: 1.35 }}>
               Energy<br />Intelligence
@@ -105,7 +105,7 @@ const LoginPage: React.FC<Props> = ({ onLogin }) => {
 
         <div style={{ textAlign: 'center', marginTop: 16 }}>
           <Text type="secondary" style={{ fontSize: 11 }}>
-            AiHVAC Building Intelligence Platform &nbsp;·&nbsp; Demo
+            Airport Energy Intelligence Platform &nbsp;·&nbsp; Demo
           </Text>
         </div>
       </div>

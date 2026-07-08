@@ -94,12 +94,6 @@ def require_admin(user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
-def count_active_admins(conn: sqlite3.Connection) -> int:
-    row = conn.execute(
-        "SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND enabled = 1"
-    ).fetchone()
-    return row["c"]
-
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 class UserOut(BaseModel):
     id:           int
@@ -181,15 +175,6 @@ def update_user(user_id: int, body: UpdateUser, admin=Depends(require_admin)):
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="User not found")
-    # Guard against locking everyone out: only block when this update would remove
-    # admin access from what is currently the last active admin.
-    demoting_role    = body.role is not None and body.role != "admin"
-    disabling_it     = body.enabled is False
-    if row["role"] == "admin" and row["enabled"] and (demoting_role or disabling_it):
-        if count_active_admins(conn) <= 1:
-            conn.close()
-            raise HTTPException(status_code=400, detail="Cannot remove the last active admin account")
-
     updates: dict = {}
     if body.display_name is not None: updates["display_name"] = body.display_name
     if body.role          is not None: updates["role"]         = body.role
@@ -209,9 +194,9 @@ def delete_user(user_id: int, admin=Depends(require_admin)):
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="User not found")
-    if row["role"] == "admin" and row["enabled"] and count_active_admins(conn) <= 1:
+    if row["username"] == admin["username"]:
         conn.close()
-        raise HTTPException(status_code=400, detail="Cannot delete the last active admin account")
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     conn.commit()
     conn.close()

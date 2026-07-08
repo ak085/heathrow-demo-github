@@ -5,10 +5,13 @@ import ReactECharts from 'echarts-for-react'
 import { useStore } from '../stores'
 import { FDDPanel } from '../components/FDDPanel'
 import { RangeBar, buildZones, zoneAt, ZONE_COLOR } from '../components/RangeBar'
+import { Gauge } from '../components/Gauge'
 import { Sparkline } from '../components/Sparkline'
 import { TimelineSwitch, type TimelineDays } from '../components/TimelineSwitch'
 import { useEchartsTheme } from '../theme/echartsTheme'
 import { windowHistory, timeLabels, labelInterval, dayMarkLine } from '../utils/history'
+import PageHeroImage from '../components/PageHeroImage'
+import { FlashValue } from '../components/FlashValue'
 import type { LightingZone } from '../stores/LightingStore'
 
 const { Title, Paragraph, Text } = Typography
@@ -70,8 +73,128 @@ const LightingPage: React.FC = observer(() => {
     }],
   }
 
+  // Footfall vs power — are we lighting empty zones?
+  const footfallVsPowerOpt = {
+    tooltip: {
+      trigger: 'item' as const,
+      formatter: (p: any) => `${p.data[2]}<br/>Footfall ${p.data[0].toFixed(0)}%  |  Power ${p.data[1].toFixed(1)} kW`,
+    },
+    grid: { left: 50, right: 20, top: 16, bottom: 34 },
+    xAxis: { type: 'value' as const, name: 'Footfall %', min: 0, max: 100, nameLocation: 'middle' as const, nameGap: 26 },
+    yAxis: { type: 'value' as const, name: 'kW' },
+    series: [{
+      type: 'scatter' as const,
+      symbolSize: 16,
+      data: zones.map(z => [Math.round(z.footfallPct), Number(z.powerKw.toFixed(1)), z.name]),
+      itemStyle: { color: (p: any) => TERMINAL_COLOR[zones.find(z => z.name === p.data[2])?.zone ?? 'T1'] },
+    }],
+  }
+
+  // kWh saved by zone — vertical column chart.
+  const kwhSavedBarOpt = {
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+    grid: { left: 55, right: 20, top: 34, bottom: 60 },
+    xAxis: { type: 'category' as const, data: zones.map(z => z.name.replace(/^T\d\s|Cargo Village\s|Landside\s/, '')), axisLabel: { rotate: 35, fontSize: 9 } },
+    yAxis: { type: 'value' as const, name: 'kWh', nameGap: 14 },
+    series: [{
+      type: 'bar' as const,
+      data: zones.map(z => ({ value: Math.round(z.kwhSavedToday), itemStyle: { color: '#16a34a' } })),
+      barWidth: '55%',
+      label: { show: true, position: 'top' as const, fontSize: 9 },
+    }],
+  }
+
+  // Zone health matrix — Dimming Accuracy / Occupancy Utilization / Fixture Health / Power Efficiency.
+  const lightingHeatmapMetrics = ['Dimming Acc.', 'Occ. Util.', 'Fixture Health', 'Efficiency'] as const
+  function lightingHeatmapScore(z: LightingZone, metric: typeof lightingHeatmapMetrics[number]): number {
+    if (metric === 'Dimming Acc.') return 100 - Math.min(100, Math.abs(z.dimmingActual - z.dimmingCommand) * 2)
+    if (metric === 'Occ. Util.') return z.footfallPct > 2 ? 100 : Math.max(0, 100 - z.minutesNoFootfall)
+    if (metric === 'Fixture Health') return z.faultyFixtureCount > 5 ? 20 : z.faultyFixtureCount > 0 ? 60 : 100
+    return z.expectedKw > 0 ? Math.max(0, 100 - Math.abs(z.powerKw - z.expectedKw) / z.expectedKw * 100) : 100
+  }
+  const lightingHeatmapData: [number, number, number][] = []
+  zones.forEach((z, zi) => {
+    lightingHeatmapMetrics.forEach((m, mi) => {
+      lightingHeatmapData.push([mi, zi, Math.round(lightingHeatmapScore(z, m))])
+    })
+  })
+  const lightingHeatmapOpt = {
+    tooltip: {
+      position: 'top' as const,
+      formatter: (p: any) => `${zones[p.data[1]].name} — ${lightingHeatmapMetrics[p.data[0]]}: ${p.data[2]}`,
+    },
+    grid: { left: 130, right: 20, top: 10, bottom: 30 },
+    xAxis: { type: 'category' as const, data: lightingHeatmapMetrics, splitArea: { show: true } },
+    yAxis: { type: 'category' as const, data: zones.map(z => z.name), splitArea: { show: true } },
+    visualMap: { min: 0, max: 100, show: false, inRange: { color: ['#cf1322', '#faad14', '#52c41a'] } },
+    series: [{
+      type: 'heatmap' as const,
+      data: lightingHeatmapData,
+      label: { show: true, fontSize: 9, formatter: (p: any) => p.data[2] },
+    }],
+  }
+
   const overviewTab = (
     <div>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/airport_lighting_monitoring_page.png"
+            alt="Lighting monitoring overview"
+            caption="Terminal lighting — power monitoring overview"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} bodyStyle={{ padding: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <ReactECharts option={powerByTerminalOpt} theme={chartTheme} style={{ width: 70, height: 70, flexShrink: 0 }} />
+                  <div style={{ marginLeft: 8 }}>
+                    <div style={{ fontSize: 11, color: undefined }}>Total Lighting Power</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: undefined }}><FlashValue value={totalPowerKw}>{totalPowerKw.toFixed(1)} kW</FlashValue></div>
+                    <div style={{ fontSize: 10, color: undefined }}>of {totalRatedKw.toFixed(1)} kW rated</div>
+                  </div>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%' }} bodyStyle={{ padding: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <ReactECharts
+                    option={{
+                      series: [{
+                        type: 'pie', radius: ['65%', '85%'], startAngle: 90,
+                        label: { show: true, position: 'center', formatter: `${activeZones}/${zones.length}`, fontSize: 16, fontWeight: 700 },
+                        data: [
+                          { value: activeZones, itemStyle: { color: PURPLE } },
+                          { value: zones.length - activeZones, itemStyle: { color: '#f0f0f0' } },
+                        ],
+                      }],
+                    }}
+                    theme={chartTheme} style={{ width: 70, height: 70, flexShrink: 0 }}
+                  />
+                  <div style={{ marginLeft: 8 }}>
+                    <div style={{ fontSize: 11, color: undefined }}>Zones Active</div>
+                    <div style={{ fontSize: 10, color: undefined }}>{totalFixtures.toLocaleString()} fixtures</div>
+                  </div>
+                </div>
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%', textAlign: 'center' }}>
+                <Statistic title="Saved Today" value={totalKwhSavedToday.toFixed(0)} suffix="kWh" valueStyle={{ fontWeight: 700, color: '#16a34a', fontSize: 22 }} />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card style={{ height: '100%', textAlign: 'center' }}>
+                <Statistic title="Est. Savings Today" value={`£${totalSavingsGbpToday.toFixed(0)}`} valueStyle={{ fontWeight: 700, color: '#16a34a', fontSize: 22 }} />
+              </Card>
+            </Col>
+          </Row>
+        </Col>
+      </Row>
+
       <Card
         title="Main Incoming Meter — Lighting LV Distribution Board"
         size="small"
@@ -80,19 +203,19 @@ const LightingPage: React.FC = observer(() => {
       >
         <Row gutter={[16, 16]}>
           <Col xs={12} sm={8} md={4}>
-            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 4 }}>Voltage (L1/L2/L3)</div>
+            <div style={{ fontSize: 11, color: undefined, marginBottom: 4 }}>Voltage (L1/L2/L3)</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>
               {mainMeter.vL1.toFixed(0)} / {mainMeter.vL2.toFixed(0)} / {mainMeter.vL3.toFixed(0)} V
             </div>
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 4 }}>Current (L1/L2/L3)</div>
+            <div style={{ fontSize: 11, color: undefined, marginBottom: 4 }}>Current (L1/L2/L3)</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>
               {mainMeter.iL1.toFixed(0)} / {mainMeter.iL2.toFixed(0)} / {mainMeter.iL3.toFixed(0)} A
             </div>
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <div style={{ fontSize: 11, color: '#8c8c8c', marginBottom: 4 }}>Power (kW / kVAR / kVA)</div>
+            <div style={{ fontSize: 11, color: undefined, marginBottom: 4 }}>Power (kW / kVAR / kVA)</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>
               {mainMeter.kw.toFixed(1)} / {mainMeter.kvar.toFixed(1)} / {mainMeter.kva.toFixed(1)}
             </div>
@@ -117,39 +240,7 @@ const LightingPage: React.FC = observer(() => {
         </Text>
       </Card>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={7}>
-          <Card style={{ height: '100%' }} bodyStyle={{ padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <ReactECharts option={powerByTerminalOpt} theme={chartTheme} style={{ width: 100, height: 100, flexShrink: 0 }} />
-              <div style={{ marginLeft: 8 }}>
-                <div style={{ fontSize: 11, color: '#8c8c8c' }}>Total Lighting Power</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: PURPLE }}>{totalPowerKw.toFixed(1)} kW</div>
-                <div style={{ fontSize: 11, color: '#8c8c8c' }}>of {totalRatedKw.toFixed(1)} kW rated</div>
-              </div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card style={{ height: '100%', textAlign: 'center' }}>
-            <Statistic title="Zones Active" value={`${activeZones}/${zones.length}`} valueStyle={{ fontWeight: 700, fontSize: 26 }} />
-            <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 6 }}>{totalFixtures.toLocaleString()} fixtures</div>
-          </Card>
-        </Col>
-        <Col xs={12} md={5}>
-          <Card style={{ height: '100%', textAlign: 'center', background: '#f0fdf4' }}>
-            <Statistic title="Saved Today" value={totalKwhSavedToday.toFixed(0)} suffix="kWh" valueStyle={{ fontWeight: 700, color: '#16a34a', fontSize: 22 }} />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card style={{ height: '100%', textAlign: 'center', background: '#f0fdf4' }}>
-            <Statistic title="Est. Savings Today" value={`£${totalSavingsGbpToday.toFixed(0)}`} valueStyle={{ fontWeight: 700, color: '#16a34a', fontSize: 22 }} />
-            <div style={{ fontSize: 10, color: '#8c8c8c', marginTop: 4 }}>DALI scheduling vs fixed-brightness baseline</div>
-          </Card>
-        </Col>
-      </Row>
-
-      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+      <Card size="small" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           Zone dimming is set via DALI scene commands on a near-24/7 airport schedule (95% during operating hours,
           55% overnight safety floor 23:00–05:00) — a much flatter profile than an office building since terminals
@@ -158,9 +249,31 @@ const LightingPage: React.FC = observer(() => {
         </Text>
       </Card>
 
-      <Card title="Power by Zone" size="small" style={{ marginBottom: 16 }}>
-        <ReactECharts option={powerCompareOpt} theme={chartTheme} style={{ height: 40 + zones.length * 32 }} />
-      </Card>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
+          <Card title="Power by Zone" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={powerCompareOpt} theme={chartTheme} style={{ height: 40 + zones.length * 32 }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="Footfall vs Power" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={footfallVsPowerOpt} theme={chartTheme} style={{ height: 40 + zones.length * 32 }} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
+          <Card title="kWh Saved by Zone (Today)" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={kwhSavedBarOpt} theme={chartTheme} style={{ height: 300 }} />
+          </Card>
+        </Col>
+        <Col xs={24} md={12}>
+          <Card title="Zone Health Matrix" size="small" style={{ height: '100%' }}>
+            <ReactECharts option={lightingHeatmapOpt} theme={chartTheme} style={{ height: 300 }} />
+          </Card>
+        </Col>
+      </Row>
 
       <Card title="Lighting Zones" size="small">
         <Table
@@ -212,6 +325,46 @@ const LightingPage: React.FC = observer(() => {
     })),
   }
 
+  const schematicTab = (
+    <div>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/schematic_lighting_layout.png"
+            alt="Lighting layout schematic"
+            caption="Lighting distribution — zone layout schematic"
+            size="large"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card title="Live Meter Readout" size="small" style={{ height: '100%' }}>
+            <Row gutter={[12, 12]}>
+              <Col span={12}>
+                <Gauge label="Power Factor" value={mainMeter.pf} min={0.80} max={1.00} zones={PF_ZONES} precision={3} height={140} />
+              </Col>
+              <Col span={12}>
+                <Statistic title="Total Power" value={totalPowerKw.toFixed(1)} suffix="kW" valueStyle={{ fontSize: 20 }} />
+                <div style={{ marginTop: 10 }}>
+                  <Statistic title="THD-I" value={mainMeter.thdI.toFixed(1)} suffix="%" valueStyle={{ fontSize: 20 }} />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Statistic title="Frequency" value={mainMeter.freq.toFixed(2)} suffix="Hz" valueStyle={{ fontSize: 20 }} />
+                </div>
+              </Col>
+            </Row>
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(128,128,128,0.2)' }}>
+              <div style={{ fontSize: 12, color: undefined, marginBottom: 8 }}>Dimming — Actual vs Command by Zone</div>
+              {zones.slice(0, 6).map(z => (
+                <RangeBar key={z.id} label={z.name} value={z.dimmingActual} unit="%" min={0} max={100}
+                  zones={NEUTRAL_ZONES} target={z.dimmingCommand} precision={0} compact />
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+    </div>
+  )
+
   const trendsTab = (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -225,7 +378,7 @@ const LightingPage: React.FC = observer(() => {
 
   return (
     <div style={{ padding: '24px 28px' }}>
-      <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Lighting — Power Monitoring</Title>
+      <Title level={3} style={{ color: undefined, marginBottom: 4 }}>Lighting — Power Monitoring</Title>
       <Paragraph type="secondary" style={{ marginBottom: 20 }}>
         10 zones — T1, T2, T3, T5, Cargo Village &amp; landside car park. DALI dimming, occupancy and driver-fault monitoring.
         Need to change a setpoint? Head to <strong>Lighting Control</strong>.
@@ -234,6 +387,7 @@ const LightingPage: React.FC = observer(() => {
         defaultActiveKey="overview"
         items={[
           { key: 'overview', label: 'Overview', children: overviewTab },
+          { key: 'schematic', label: 'System Schematic', children: schematicTab },
           { key: 'trends', label: 'Trends', children: trendsTab },
           { key: 'alarms', label: `Alarms (${allFindings.length})`, children: <FDDPanel findings={allFindings} systemLabel="Lighting" /> },
         ]}

@@ -5,6 +5,8 @@ import ReactECharts from 'echarts-for-react'
 import { useStore } from '../stores'
 import { useEchartsTheme } from '../theme/echartsTheme'
 import { SEVERITY_ORDER, SEVERITY_STYLE, type Finding, type Severity } from '../types/fdd'
+import PageHeroImage from '../components/PageHeroImage'
+import { FlashValue } from '../components/FlashValue'
 
 const { Title, Paragraph, Text } = Typography
 const PURPLE = '#5a0057'
@@ -49,7 +51,8 @@ const CHANNEL_COLOR: Record<NotifyChannel, string> = {
 }
 
 const AlarmsPage: React.FC = observer(() => {
-  const { chiller, ahu, power, solar, tenant, lighting } = useStore()
+  const store = useStore()
+  const { chiller, ahu, power, solar, tenant, lighting } = store
   const chartTheme = useEchartsTheme()
   const [groupFilter, setGroupFilter] = useState<Group | 'All'>('All')
   const [severityFilter, setSeverityFilter] = useState<Severity | 'All'>('All')
@@ -94,10 +97,42 @@ const AlarmsPage: React.FC = observer(() => {
 
   return (
     <div style={{ padding: '24px 28px' }}>
-      <Title level={3} style={{ color: PURPLE, marginBottom: 4 }}>Alarms</Title>
+      <Title level={3} style={{ color: undefined, marginBottom: 4 }}>Alarms</Title>
       <Paragraph type="secondary" style={{ marginBottom: 20 }}>
         Every active finding across Chiller Plant, AHUs, Power &amp; Grid, Solar &amp; Export, Tenant Billing and Lighting in one place.
       </Paragraph>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={14}>
+          <PageHeroImage
+            src="/assets/airport_alarms_page.png"
+            alt="Alarms overview"
+            caption="Terminal-wide alarms & fault detection overview"
+          />
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card size="small" style={{ height: '100%' }}>
+            <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+              <Col span={12}>
+                <Card size="small" style={{ textAlign: 'center' }}>
+                  <Statistic title="Critical" value={critCount}
+                    formatter={() => <FlashValue value={critCount}>{critCount}</FlashValue>}
+                    valueStyle={{ color: critCount > 0 ? '#cf1322' : '#52c41a', fontWeight: 700, fontSize: 26 }} />
+                </Card>
+              </Col>
+              <Col span={12}>
+                <Card size="small" style={{ textAlign: 'center' }}>
+                  <Statistic title="Warnings" value={warnCount}
+                    formatter={() => <FlashValue value={warnCount}>{warnCount}</FlashValue>}
+                    valueStyle={{ color: warnCount > 0 ? '#d48806' : '#52c41a', fontWeight: 700, fontSize: 26 }} />
+                </Card>
+              </Col>
+            </Row>
+            <Text type="secondary" style={{ fontSize: 12 }}>Findings by System</Text>
+            <ReactECharts option={groupChartOpt} theme={chartTheme} style={{ height: 220 }} />
+          </Card>
+        </Col>
+      </Row>
 
       {/* Alert ticker — single most severe active alarm */}
       {mostSevere ? (
@@ -112,25 +147,7 @@ const AlarmsPage: React.FC = observer(() => {
         <Alert style={{ marginBottom: 16 }} type="success" showIcon message="All Clear — no active findings across any system" />
       )}
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={4}>
-          <Card style={{ textAlign: 'center', height: '100%' }}>
-            <Statistic title="Critical" value={critCount} valueStyle={{ color: critCount > 0 ? '#cf1322' : '#52c41a', fontWeight: 700, fontSize: 28 }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={4}>
-          <Card style={{ textAlign: 'center', height: '100%' }}>
-            <Statistic title="Warnings" value={warnCount} valueStyle={{ color: warnCount > 0 ? '#d48806' : '#52c41a', fontWeight: 700, fontSize: 28 }} />
-          </Card>
-        </Col>
-        <Col xs={24} md={16}>
-          <Card title="Findings by System" size="small">
-            <ReactECharts option={groupChartOpt} theme={chartTheme} style={{ height: 180 }} />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+      <Card size="small" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           <strong>Notify policy (demo default):</strong> Critical → <Tag color={CHANNEL_COLOR['Email + SMS']} style={{ marginBottom: 0 }}>Email + SMS</Tag>
           {' '}Warning → <Tag color={CHANNEL_COLOR['Email']} style={{ marginBottom: 0 }}>Email</Tag>

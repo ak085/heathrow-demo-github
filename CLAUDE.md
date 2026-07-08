@@ -1,6 +1,12 @@
 # heathrow-demo — Heathrow Energy Intelligence Demo
 
-Dashboard demo for Heathrow Airport. Five pages showing AI optimisation across chiller plant, AHUs, power substations, solar generation, and energy savings.
+Dashboard demo for Heathrow Airport. Pages showing AI optimisation across chiller plant, AHUs, power substations, solar generation, tenant billing, lighting, alarms, and energy savings.
+
+**Two independent deployments — see RESTORE.md before assuming which one you're on.**
+This checkout (CT 106, `/home/ak101/heathrow-demo`) is the **dev copy**, source of truth
+is **Gitea** (`ak101/heathrow-demo.git`). There is a separate **DMZ-hosted customer-facing
+copy** with its own git history that backs up to a private GitHub repo instead of Gitea
+(see `DEPLOY_KEYS.md`) — don't confuse the two or assume they're in sync.
 
 ## Brand
 
@@ -28,33 +34,20 @@ Dashboard demo for Heathrow Airport. Five pages showing AI optimisation across c
 |---|---|
 | Frontend | localhost:8030 (also via Traefik if wired) |
 
-## Current status (as of 2026-07-01)
+## Current status (as of 2026-07-08)
 
 All stores and pages are written and building successfully. The app is running at port 8030.
+Content on this CT 106 checkout was synced from the DMZ deployment's GitHub backup
+(`ak085/heathrow-demo-github.git`) on 2026-07-08 — see RESTORE.md for what that means
+and doesn't mean (it's a one-off merge, not a standing sync).
 
-**What is done:**
-- `src/stores/ChillerStore.ts` — 3 chillers, COP/kW 288-point history, AI setpoints, FDD
-- `src/stores/AHUStore.ts` — 6 AHUs, CO₂/filter/SAT, FDD
-- `src/stores/PowerGridStore.ts` — 4 substations, demand history, PF tracking, heatmap data, FDD
-- `src/stores/SolarStore.ts` — generation curve, export headroom, 288-point history
-- `src/stores/SavingsStore.ts` — baseline vs actual, COP improvement, weekly bars
-- `src/stores/index.ts` — RootStore wiring all stores
-- `src/pages/LandingPage.tsx` — 5-tile Heathrow dashboard
-- `src/pages/ChillerPage.tsx` — Overview / Details / AI Setpoints / Alarms tabs
-- `src/pages/AHUPage.tsx` — Overview / CO₂ & Ventilation / AI Setpoints / Alarms tabs
-- `src/pages/PowerGridPage.tsx` — Demand Profiles / Power Factor / Sub-Meters / Demand Heatmap / Alarms tabs
-- `src/pages/SolarPage.tsx` — Live Generation / Export Management / History tabs
-- `src/pages/SavingsPage.tsx` — AI Impact / FDD Summary tabs
-- `src/pages/LoginPage.tsx` — Heathrow branded (purple)
-- `src/App.tsx` — Heathrow brand, new routes and nav
-
-**What still needs doing:**
-- Create Gitea repo via API (see credentials in shell history / password manager)
-- Then push: `git remote add origin http://ak101:PASSWORD@10.0.10.24:30008/ak101/heathrow-demo.git && git push -u origin main`
-- The LoginPage edit (DBS→Heathrow) is NOT yet committed or rebuilt — do `docker compose build && docker compose up -d` after any further edits
-
-**Uncommitted changes:**
-- `frontend/src/pages/LoginPage.tsx` — DBS branding replaced with Heathrow (not yet committed)
+**Hero images:** each equipment page carries reference-design/marketing images via the
+shared `src/components/PageHeroImage.tsx` component, sourced from `public/assets/*.png`
+(copied into `dist/assets/` by the frontend's `npm run build` script — no webpack
+asset-loader involved, see `frontend/package.json`). Landing page centers one `size="large"`
+image above the header; equipment pages place a `size="compact"` image side-by-side with
+live stat cards inside the Overview tab (see ChillerPage.tsx for the reference pattern).
+This is the placement convention `bank-demo` was asked to match (2026-07-08).
 
 ## Pages
 
@@ -64,7 +57,11 @@ All stores and pages are written and building successfully. The app is running a
 - `/power` — PowerGridPage
 - `/solar` — SolarPage
 - `/savings` — SavingsPage
-- `/users` — UsersPage (admin only, unchanged)
+- `/tenant` — TenantPage
+- `/lighting` — LightingPage
+- `/lighting-control` — LightingControlPage
+- `/alarms` — AlarmsPage
+- `/users` — UsersPage (admin only)
 
 ## How to build & run
 
