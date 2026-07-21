@@ -4,9 +4,11 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Proxy API requests to the auth backend (internal docker network)
+    # Proxy API requests to the auth backend. Compose resolves the service by name;
+    # on ECS, where a task shares one network namespace and has no such DNS, set
+    # API_UPSTREAM=127.0.0.1:8000.
     location /api/ {
-        proxy_pass         http://heathrow-demo-backend:8000;
+        proxy_pass         http://${API_UPSTREAM};
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;

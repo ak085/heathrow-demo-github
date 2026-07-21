@@ -7,11 +7,15 @@ from jose import JWTError, jwt
 from typing import Optional, List
 import sqlite3
 import os
+import secrets
 from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-SECRET_KEY           = os.getenv("SECRET_KEY", "dbs-demo-8x4k9p2m-change-in-production")
+# A committed signing key is the same as no login at all: anyone holding it can mint
+# a valid admin token without touching the login form. Absent SECRET_KEY we generate a
+# random one per process — the cost is that a restart invalidates existing sessions.
+SECRET_KEY           = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
 ALGORITHM            = "HS256"
 TOKEN_EXPIRE_HOURS   = 12
 DB_PATH              = os.getenv("DB_PATH", "/data/users.db")
@@ -68,6 +72,39 @@ def init_db():
     conn.close()
 
 init_db()
+
+# ─── Login rate limiting ──────────────────────────────────────────────────────
+# Keyed on username, not IP: behind a reverse proxy every request carries the
+# proxy's address, and trusting forwarded-IP headers would let an attacker spoof
+# their way around the limit. A correct password clears the counter, so an honest
+# typo costs nothing and locking one username never affects another.
+MAX_FAILED_ATTEMPTS = 6
+LOCKOUT_MINUTES     = 15
+_failed_logins: dict[str, list[datetime]] = {}
+
+def _recent_failures(username: str) -> list[datetime]:
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOCKOUT_MINUTES)
+    recent = [t for t in _failed_logins.get(username, []) if t > cutoff]
+    if recent:
+        _failed_logins[username] = recent
+    else:
+        _failed_logins.pop(username, None)
+    return recent
+
+def check_not_locked(username: str) -> None:
+    recent = _recent_failures(username)
+    if len(recent) >= MAX_FAILED_ATTEMPTS:
+        wait = LOCKOUT_MINUTES - int((datetime.now(timezone.utc) - recent[0]).total_seconds() // 60)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed sign-in attempts. Try again in {max(wait, 1)} minute(s).",
+        )
+
+def record_failure(username: str) -> None:
+    _failed_logins.setdefault(username, []).append(datetime.now(timezone.utc))
+
+def clear_failures(username: str) -> None:
+    _failed_logins.pop(username, None)
 
 # ─── Auth helpers ─────────────────────────────────────────────────────────────
 def verify_password(plain: str, hashed: str) -> bool:
@@ -163,15 +200,18 @@ class ResetPassword(BaseModel):
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 @app.post("/api/auth/token")
 def login(form: OAuth2PasswordRequestForm = Depends()):
+    check_not_locked(form.username)
     conn = get_db()
     row = conn.execute(
         "SELECT * FROM users WHERE username = ? AND enabled = 1", (form.username,)
     ).fetchone()
     conn.close()
     if not row or not verify_password(form.password, row["password_hash"]):
+        record_failure(form.username)
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     if is_password_expired(row):
         raise HTTPException(status_code=400, detail="Password expired — contact an admin to reset it")
+    clear_failures(form.username)
     token = create_token({"sub": row["username"], "role": row["role"]})
     return {
         "access_token":        token,
