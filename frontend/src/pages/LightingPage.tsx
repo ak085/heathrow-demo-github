@@ -139,7 +139,7 @@ const LightingPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/airport_lighting_monitoring_page.png"
+            src="/assets/airport_lighting_monitoring_page.webp"
             alt="Lighting monitoring overview"
             caption="Terminal lighting — power monitoring overview"
           />
@@ -330,7 +330,7 @@ const LightingPage: React.FC = observer(() => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/schematic_lighting_layout.png"
+            src="/assets/schematic_lighting_layout.webp"
             alt="Lighting layout schematic"
             caption="Lighting distribution — zone layout schematic"
             size="large"

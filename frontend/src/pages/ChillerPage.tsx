@@ -237,7 +237,7 @@ const ChillerPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/heathrow_schematic_v2_ground_pumps.png"
+            src="/assets/heathrow_schematic_v2_ground_pumps.webp"
             alt="Chiller plant 3D render"
             caption="Central plant — chilled water generation overview"
           />
@@ -491,7 +491,7 @@ const ChillerPage: React.FC = observer(() => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/schematic_chiller_plant_chw.png"
+            src="/assets/schematic_chiller_plant_chw.webp"
             alt="Chiller plant chilled water schematic"
             caption="Chiller plant — chilled water loop schematic"
             size="large"

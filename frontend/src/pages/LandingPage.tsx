@@ -128,7 +128,7 @@ const LandingPage: React.FC = observer(() => {
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
         <div style={{ width: '100%', maxWidth: 980 }}>
           <PageHeroImage
-            src="/assets/heathrow_dashboard_landing_page.png"
+            src="/assets/heathrow_dashboard_landing_page.webp"
             alt="Airport Energy Intelligence dashboard"
             caption="Airport Energy Intelligence — Terminal overview"
             size="large"

@@ -130,7 +130,7 @@ const TenantPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/heathrow_tenant_billing_3d.png"
+            src="/assets/heathrow_tenant_billing_3d.webp"
             alt="Tenant billing overview"
             caption="Tenant sub-metering & commercial billing overview"
           />

@@ -91,7 +91,7 @@ const SolarPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/airport_solar_export_3d.png"
+            src="/assets/airport_solar_export_3d.webp"
             alt="Airport solar export"
             caption="Rooftop and apron solar arrays — grid export overview"
           />
@@ -258,7 +258,7 @@ const SolarPage: React.FC = observer(() => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/schematic_solar_grid.png"
+            src="/assets/schematic_solar_grid.webp"
             alt="Solar grid schematic"
             caption="Solar generation — grid export schematic"
             size="large"

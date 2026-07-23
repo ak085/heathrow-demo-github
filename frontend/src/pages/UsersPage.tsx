@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import {
   Card, Row, Col, Table, Tag, Button, Form, Input, Select, message,
-  Space, Typography, Popconfirm, Modal, Switch, DatePicker,
+  Space, Typography, Popconfirm, Modal, Switch, DatePicker, Upload,
 } from 'antd'
 import {
   TeamOutlined, PlusOutlined, KeyOutlined, DeleteOutlined, ClockCircleOutlined,
+  UploadOutlined, DownloadOutlined,
 } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { authHeaders, getStoredUser } from '../auth'
@@ -43,6 +44,14 @@ const UsersPage: React.FC = () => {
     open: false, userId: null, name: '',
   })
   const [expiryDate, setExpiryDate] = useState<Dayjs | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<null | {
+    summary: { total: number; created: number; updated: number; errors: number }
+    default_password: string
+    results: { row: number; username: string; action: string; detail: string }[]
+  }>(null)
 
   async function fetchUsers() {
     setLoading(true)
@@ -161,6 +170,38 @@ const UsersPage: React.FC = () => {
     }
   }
 
+  async function doImport() {
+    if (!importFile) { message.warning('Choose a file first'); return }
+    setImporting(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', importFile)
+      // Don't set Content-Type — the browser adds the multipart boundary itself.
+      const res = await fetch('/api/users/import', { method: 'POST', headers: authHeaders(), body: fd })
+      const data = await res.json()
+      if (!res.ok) throw new Error((data as { detail?: string }).detail || 'Import failed')
+      setImportResult(data)
+      const { created, updated, errors } = data.summary
+      message.success(`Import complete — ${created} created, ${updated} updated, ${errors} error(s)`)
+      fetchUsers()
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function downloadTemplate() {
+    const sample = 'username,display_name,role,password,password_expires_at\n'
+    const blob = new Blob([sample], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'users-template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const columns = [
     {
       title: 'Username', dataIndex: 'username', key: 'username', width: 140,
@@ -256,9 +297,14 @@ const UsersPage: React.FC = () => {
         title={`Users (${users.length})`}
         size="small"
         extra={
-          <Button size="small" onClick={fetchUsers} loading={loading}>
-            Refresh
-          </Button>
+          <Space>
+            <Button size="small" icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
+              Import
+            </Button>
+            <Button size="small" onClick={fetchUsers} loading={loading}>
+              Refresh
+            </Button>
+          </Space>
         }
         style={{ marginBottom: 24 }}
       >
@@ -325,6 +371,7 @@ const UsersPage: React.FC = () => {
               >
                 <DatePicker
                   style={{ width: '100%' }}
+                  format="DD-MM-YYYY"
                   disabledDate={(d) => d.isBefore(dayjs().startOf('day'))}
                   placeholder="No expiry"
                 />
@@ -372,11 +419,81 @@ const UsersPage: React.FC = () => {
         </Text>
         <DatePicker
           style={{ width: '100%' }}
+          format="DD-MM-YYYY"
           value={expiryDate}
           onChange={setExpiryDate}
           disabledDate={(d) => d.isBefore(dayjs().startOf('day'))}
           placeholder="No expiry"
         />
+      </Modal>
+
+      {/* Bulk CSV import modal */}
+      <Modal
+        title={<><UploadOutlined style={{ marginRight: 8 }} />Import Users — CSV</>}
+        open={importOpen}
+        width={700}
+        onCancel={() => { setImportOpen(false); setImportFile(null); setImportResult(null) }}
+        footer={[
+          <Button key="close" onClick={() => { setImportOpen(false); setImportFile(null); setImportResult(null) }}>
+            Close
+          </Button>,
+          <Button key="go" type="primary" loading={importing} disabled={!importFile} onClick={doImport}>
+            Import
+          </Button>,
+        ]}
+      >
+        <Text style={{ display: 'block', marginBottom: 10, color: '#595959' }}>
+          Columns: <Text code>username</Text> (required), <Text code>display_name</Text>, <Text code>role</Text> (viewer/admin),{' '}
+          <Text code>password</Text>, <Text code>password_expires_at</Text> (DD-MM-YYYY). Existing usernames are <b>updated</b> (a
+          blank password keeps the current one); new users with a blank password get the default password.
+        </Text>
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Text type="secondary" style={{ fontSize: 12 }}>Template:</Text>
+          <Button size="small" icon={<DownloadOutlined />} onClick={downloadTemplate}>
+            Download CSV template
+          </Button>
+        </Space>
+        <Upload.Dragger
+          accept=".csv"
+          maxCount={1}
+          multiple={false}
+          beforeUpload={(f) => { setImportFile(f); setImportResult(null); return false }}
+          onRemove={() => setImportFile(null)}
+          fileList={importFile ? [{ uid: '1', name: importFile.name, status: 'done' }] : []}
+        >
+          <p className="ant-upload-drag-icon" style={{ marginBottom: 4 }}><UploadOutlined /></p>
+          <p className="ant-upload-text">Click or drag a .csv file here</p>
+        </Upload.Dragger>
+
+        {importResult && (
+          <div style={{ marginTop: 16 }}>
+            <Space size={8} wrap>
+              <Tag color="blue">Total {importResult.summary.total}</Tag>
+              <Tag color="green">Created {importResult.summary.created}</Tag>
+              <Tag color="gold">Updated {importResult.summary.updated}</Tag>
+              <Tag color={importResult.summary.errors ? 'red' : 'default'}>Errors {importResult.summary.errors}</Tag>
+            </Space>
+            <Text type="secondary" style={{ display: 'block', margin: '8px 0', fontSize: 12 }}>
+              New users imported without a password use the default: <Text code>{importResult.default_password}</Text>
+            </Text>
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="row"
+              dataSource={importResult.results}
+              scroll={{ y: 220 }}
+              columns={[
+                { title: 'Row', dataIndex: 'row', width: 55 },
+                { title: 'Username', dataIndex: 'username', render: (v: string) => <Text style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</Text> },
+                {
+                  title: 'Action', dataIndex: 'action', width: 90,
+                  render: (a: string) => <Tag color={a === 'created' ? 'green' : a === 'updated' ? 'gold' : a === 'error' ? 'red' : 'default'}>{a}</Tag>,
+                },
+                { title: 'Detail', dataIndex: 'detail', render: (v: string) => <Text style={{ fontSize: 12 }}>{v}</Text> },
+              ]}
+            />
+          </div>
+        )}
       </Modal>
     </div>
   )

@@ -59,7 +59,7 @@ const LightingControlPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/airport_led_lighting_control_3d.png"
+            src="/assets/airport_led_lighting_control_3d.webp"
             alt="Airport LED lighting control"
             caption="Terminal LED lighting — DALI zone control overview"
           />

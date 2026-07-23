@@ -21,12 +21,21 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Cache static assets aggressively
-    location ~* \.(js|css|png|jpg|gif|ico|svg|woff2?)$ {
+    # Hashed JS/CSS/fonts — filename changes on content change, so cache forever.
+    location ~* \.(js|css|woff2?)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
+    # Images have stable names under /assets/ — cache a week but revalidate, so a
+    # redeployed (updated) image is picked up rather than served stale for a year.
+    location ~* \.(webp|png|jpe?g|gif|ico|svg)$ {
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+    }
+
     gzip on;
-    gzip_types text/plain application/javascript application/json text/css;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_types application/javascript application/json text/css image/svg+xml application/wasm text/plain;
 }

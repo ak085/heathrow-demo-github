@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -8,6 +8,8 @@ from typing import Optional, List
 import sqlite3
 import os
 import secrets
+import csv
+import io
 from datetime import datetime, timedelta, date, timezone
 from zoneinfo import ZoneInfo
 
@@ -20,6 +22,11 @@ ALGORITHM            = "HS256"
 TOKEN_EXPIRE_HOURS   = 12
 DB_PATH              = os.getenv("DB_PATH", "/data/users.db")
 LOCAL_TZ             = ZoneInfo("Europe/London")
+
+# Bulk CSV import: a blank password on a NEW user falls back to this known default
+# (echoed back in the import response, overridable via DEFAULT_IMPORT_PASSWORD).
+DEFAULT_IMPORT_PASSWORD = os.getenv("DEFAULT_IMPORT_PASSWORD", "Heathrow@123")
+VALID_ROLES = {"admin", "viewer"}
 
 # ─── App setup ───────────────────────────────────────────────────────────────
 app = FastAPI(title="DBS Demo Auth", docs_url=None, redoc_url=None)
@@ -317,3 +324,106 @@ def reset_password(user_id: int, body: ResetPassword, admin=Depends(require_admi
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+# ─── Bulk CSV user import ─────────────────────────────────────────────────────
+def _import_expiry_to_iso(value: str) -> str:
+    """Parse an import expiry date to the YYYY-MM-DD that resolve_expiry expects. The
+    documented format is day-first DD-MM-YYYY, but we also accept the slash and
+    2-digit-year variants Excel silently rewrites (e.g. 1/1/2027), plus ISO."""
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%d-%m-%y", "%d/%m/%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).date().isoformat()
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="Invalid expiry date format — use DD-MM-YYYY (e.g. 31-12-2027)")
+
+
+def _parse_import_file(filename: str, content: bytes) -> list[dict]:
+    """Parse an uploaded CSV user list into a list of row dicts."""
+    if not (filename or "").lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Unsupported file type — upload a .csv file")
+    try:
+        text = content.decode("utf-8-sig")  # tolerate a BOM from Excel-exported CSV
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 text")
+    return list(csv.DictReader(io.StringIO(text)))
+
+
+@app.post("/api/users/import")
+async def import_users(file: UploadFile = File(...), admin=Depends(require_admin)):
+    """Bulk create/update users from a CSV. Upsert by username: an existing user is
+    updated (password only if the row supplies one); a new user with no password gets
+    DEFAULT_IMPORT_PASSWORD. One bad row is reported, not fatal."""
+    content = await file.read()
+    try:
+        rows = _parse_import_file(file.filename, content)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not parse file: {e}")
+
+    results: list[dict] = []
+    seen: set = set()
+    created = updated = errors = 0
+    conn = get_db()
+    try:
+        for i, raw in enumerate(rows, start=1):
+            def fail(detail: str, username: str = "") -> None:
+                nonlocal errors
+                results.append({"row": i, "username": username, "action": "error", "detail": detail})
+                errors += 1
+
+            if not isinstance(raw, dict):
+                fail("Row is not an object"); continue
+            username = str(raw.get("username", "") or "").strip()
+            display_name = str(raw.get("display_name", "") or "").strip()
+            role = (str(raw.get("role", "") or "").strip() or "viewer").lower()
+            password = str(raw.get("password", "") or "").strip()
+            expiry = str(raw.get("password_expires_at", "") or "").strip() or None
+
+            if not username:
+                fail("Missing username"); continue
+            if username in seen:
+                fail("Duplicate username within file", username); continue
+            seen.add(username)
+            if role not in VALID_ROLES:
+                fail(f"Invalid role '{role}' (use admin or viewer)", username); continue
+            if not display_name:
+                display_name = username
+            try:
+                expires_at = resolve_expiry(_import_expiry_to_iso(expiry)) if expiry else None
+            except HTTPException as e:
+                fail(str(e.detail), username); continue
+            if password and len(password) < 6:
+                fail("Password must be at least 6 characters", username); continue
+
+            existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if existing:
+                sets: dict = {"display_name": display_name, "role": role, "password_expires_at": expires_at}
+                if password:
+                    sets["password_hash"] = hash_password(password)
+                clause = ", ".join(f"{k} = ?" for k in sets)
+                conn.execute(f"UPDATE users SET {clause} WHERE username = ?", (*sets.values(), username))
+                results.append({"row": i, "username": username, "action": "updated",
+                                "detail": "password changed" if password else "kept existing password"})
+                updated += 1
+            else:
+                used_default = not password
+                pw = password or DEFAULT_IMPORT_PASSWORD
+                conn.execute(
+                    "INSERT INTO users (username, password_hash, display_name, role, password_expires_at) VALUES (?, ?, ?, ?, ?)",
+                    (username, hash_password(pw), display_name, role, expires_at),
+                )
+                results.append({"row": i, "username": username, "action": "created",
+                                "detail": "default password" if used_default else "password set"})
+                created += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "summary": {"total": len(rows), "created": created, "updated": updated, "errors": errors},
+        "default_password": DEFAULT_IMPORT_PASSWORD,
+        "results": results,
+    }

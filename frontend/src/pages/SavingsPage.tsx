@@ -106,7 +106,7 @@ const SavingsPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/airport_energy_saving_page.png"
+            src="/assets/airport_energy_saving_page.webp"
             alt="Energy savings overview"
             caption="AI-driven energy savings — terminal overview"
           />
@@ -198,7 +198,7 @@ const SavingsPage: React.FC = observer(() => {
   const schematicTab = (
     <div>
       <PageHeroImage
-        src="/assets/schematic_energy_savings.png"
+        src="/assets/schematic_energy_savings.webp"
         alt="Energy savings schematic"
         caption="Energy savings — baseline vs. AI-optimised schematic"
         size="large"

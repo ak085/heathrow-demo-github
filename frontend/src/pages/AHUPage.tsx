@@ -192,7 +192,7 @@ const AHUPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/ahu_3d_ec_fans_cutaway.png"
+            src="/assets/ahu_3d_ec_fans_cutaway.webp"
             alt="AHU EC fan array cutaway"
             caption="EC plug fan array — Terminal AHU plant room"
           />
@@ -420,7 +420,7 @@ const AHUPage: React.FC = observer(() => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/schematic_ahu_control.png"
+            src="/assets/schematic_ahu_control.webp"
             alt="AHU control schematic"
             caption="Air handling unit — control schematic"
             size="large"

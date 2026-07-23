@@ -136,7 +136,7 @@ const PowerGridPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/airport_power_grid_3d.png"
+            src="/assets/airport_power_grid_3d.webp"
             alt="Airport power grid substations"
             caption="Terminal substations — power distribution overview"
           />
@@ -549,7 +549,7 @@ const PowerGridPage: React.FC = observer(() => {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/schematic_power_grid.png"
+            src="/assets/schematic_power_grid.webp"
             alt="Power grid distribution schematic"
             caption="Power distribution — grid incoming to end use"
             size="large"

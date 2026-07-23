@@ -105,7 +105,7 @@ const AlarmsPage: React.FC = observer(() => {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={14}>
           <PageHeroImage
-            src="/assets/airport_alarms_page.png"
+            src="/assets/airport_alarms_page.webp"
             alt="Alarms overview"
             caption="Terminal-wide alarms & fault detection overview"
           />
